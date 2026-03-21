@@ -10,79 +10,123 @@ The Go backend is the central orchestrator of the PoSA pipeline — it receives 
 
 ## Directory Structure
 
-```
+```md
 backend/
-├── main.go                  # Server entrypoint, route registration
+├── main.go                      # Server entrypoint, middleware chain, route registration
 ├── handlers/
-│   ├── handlers.go          # Health, Verify handlers + writeJSON helper
-│   ├── handlers_test.go     # Unit tests for Health, Verify, writeJSON
-│   ├── submit.go            # Submit handler (file upload + repo link)
-│   ├── submit_test.go       # Unit tests for Submit (edge cases)
-│   └── integration_test.go  # Integration tests (full mux routing)
+│   ├── types.go                 # Type definitions, validators (filename, URL, CID)
+│   ├── types_test.go            # Validator unit tests
+│   ├── handlers.go              # Health, Verify, respondOK/respondError, writeJSON
+│   ├── handlers_test.go         # Unit tests for Health, Verify, CID validation
+│   ├── submit.go                # Submit handler (file upload + repo link)
+│   ├── submit_test.go           # Unit tests for Submit (security edge cases)
+│   └── integration_test.go      # Integration tests (mux routing, middleware, envelope)
+├── middleware/
+│   ├── middleware.go             # SecurityHeaders, RequestID, Recovery
+│   └── middleware_test.go        # Middleware unit tests
 ├── services/
-│   └── services.go          # Business logic (AI, IPFS, blockchain orchestration)
+│   └── services.go              # Business logic (AI, IPFS, blockchain orchestration)
 ├── blockchain/
-│   └── blockchain.go        # Chain interaction layer
-└── go.mod                   # Module definition
+│   └── blockchain.go            # Chain interaction layer
+└── go.mod                       # Module definition
 ```
 
-## How It Works
+## Security Architecture
 
-1. `main.go` creates an `http.ServeMux`, registers all routes, and starts the server on `:8080`
-2. Incoming requests are routed to handler functions by method and path
-3. `Submit` detects Content-Type to route between file upload and repo link flows
-4. Each handler returns a JSON response via the shared `writeJSON` helper
-5. Business logic (AI calls, IPFS uploads, blockchain transactions) will live in `services/`
-6. Direct chain interactions will live in `blockchain/`
+All requests pass through a middleware chain before reaching handlers:
+
+```mmd
+Request → Recovery → RequestID → SecurityHeaders → ServeMux → Handler
+```
+
+### Middleware
+
+| Middleware | Purpose |
+|---|---|
+| `Recovery` | Catches panics, returns 500 JSON instead of crashing |
+| `RequestID` | Generates unique 16-char hex ID per request (`X-Request-ID` header) |
+| `SecurityHeaders` | Sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy: default-src 'none'`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` |
+
+### Data Validation
+
+All user input is validated through dedicated functions in `types.go`:
+
+| Validator | Protects Against |
+|---|---|
+| `ValidateFilename` | Path traversal (`../`), null bytes, backslashes, blocked extensions (`.exe`, `.sh`, `.bat`, `.dll`, etc.), special characters |
+| `ValidateRepoURL` | Non-HTTPS, non-GitHub hosts, missing owner/repo, path traversal in URL, malformed URLs |
+| `ValidateCID` | Injection characters (`;`, `\|`, `<`, `>`, `"`, `'`, `&`), null bytes, slashes, invalid format/length |
+
+### Input Limits
+
+| Limit | Value | Enforced By |
+|---|---|---|
+| File upload size | 10MB | `http.MaxBytesReader` |
+| JSON body size | 1MB | `http.MaxBytesReader` |
+| Unknown JSON fields | Rejected | `decoder.DisallowUnknownFields()` |
+
+## API Response Envelope
+
+All responses use a consistent envelope:
+
+**Success:**
+
+```json
+{
+  "success": true,
+  "data": { ... }
+}
+```
+
+**Error:**
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable description"
+  }
+}
+```
 
 ## API Reference
 
 ### `GET /health`
 
-Health check endpoint for uptime monitoring.
-
 **Response:** `200 OK`
+
 ```json
-{"status": "ok"}
+{"success": true, "data": {"status": "ok"}}
 ```
 
 ### `POST /api/submit`
 
-Submit work for AI evaluation. Supports two Content-Types:
-
 #### File Upload — `multipart/form-data`
 
-Upload a file via the `file` form field. Maximum size: **10MB**.
-
 ```bash
-curl -X POST http://localhost:8080/api/submit \
-  -F "file=@main.go"
+curl -X POST http://localhost:8080/api/submit -F "file=@main.go"
 ```
 
 **Response:** `200 OK`
+
 ```json
 {
-  "type": "file",
-  "name": "main.go",
-  "size": 142,
-  "message": "file received, pending evaluation"
+  "success": true,
+  "data": {"type": "file", "name": "main.go", "size": 142, "message": "file received, pending evaluation"}
 }
 ```
 
-**Error responses:**
-
-| Status | Condition | Body |
+| Status | Code | Condition |
 |---|---|---|
-| `400` | Missing Content-Type header | `{"error": "Content-Type header is required"}` |
-| `400` | Missing `file` form field | `{"error": "missing or invalid 'file' field"}` |
-| `400` | Empty filename | `{"error": "filename is required"}` |
-| `400` | Empty file (0 bytes) | `{"error": "file is empty"}` |
-| `413` | File exceeds 10MB | `{"error": "file exceeds 10MB limit"}` |
-| `415` | Unsupported Content-Type | `{"error": "Content-Type must be multipart/form-data or application/json"}` |
+| `400` | `MISSING_CONTENT_TYPE` | No Content-Type header |
+| `400` | `MISSING_FILE` | Missing `file` form field |
+| `400` | `INVALID_FILENAME` | Path traversal, null bytes, blocked extension |
+| `400` | `EMPTY_FILE` | 0-byte file |
+| `413` | `FILE_TOO_LARGE` | Exceeds 10MB |
+| `415` | `UNSUPPORTED_MEDIA_TYPE` | Wrong Content-Type |
 
 #### Repo Link — `application/json`
-
-Submit a GitHub repository URL for analysis.
 
 ```bash
 curl -X POST http://localhost:8080/api/submit \
@@ -91,153 +135,88 @@ curl -X POST http://localhost:8080/api/submit \
 ```
 
 **Response:** `200 OK`
+
 ```json
 {
-  "type": "repo",
-  "name": "https://github.com/user/project",
-  "size": 0,
-  "message": "repo link received, pending evaluation"
+  "success": true,
+  "data": {"type": "repo", "name": "https://github.com/user/project", "size": 0, "message": "repo link received, pending evaluation"}
 }
 ```
 
-**Error responses:**
-
-| Status | Condition | Body |
+| Status | Code | Condition |
 |---|---|---|
-| `400` | Invalid/malformed JSON | `{"error": "invalid JSON body"}` |
-| `400` | Missing or empty `repo` field | `{"error": "'repo' field is required"}` |
-| `400` | Non-GitHub URL | `{"error": "repo must be a valid GitHub URL (https://github.com/...)"}` |
+| `400` | `INVALID_JSON` | Malformed JSON or unknown fields |
+| `400` | `INVALID_REPO` | Empty, non-HTTPS, non-GitHub, missing owner/repo, path traversal |
 
 ### `GET /api/verify/{cid}`
 
-Verify a credential by its IPFS CID.
+**Response:** `200 OK`
 
-**Path parameter:** `cid` (required) — the IPFS content identifier
-
-**Response:** `501 Not Implemented` (placeholder — pending Phase 3–4)
 ```json
-{"message": "verify endpoint not yet implemented", "cid": "QmTestCid123"}
+{
+  "success": true,
+  "data": {"cid": "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", "message": "verify endpoint not yet implemented"}
+}
 ```
 
-**Error — missing CID:** `400 Bad Request`
-```json
-{"error": "cid is required"}
-```
-
-## Key Functions
-
-| Function | File | Purpose |
+| Status | Code | Condition |
 |---|---|---|
-| `main` | `main.go` | Registers routes, starts HTTP server |
-| `Health` | `handlers.go` | Returns health status JSON |
-| `Submit` | `submit.go` | Routes by Content-Type to file upload or repo link handler |
-| `handleFileUpload` | `submit.go` | Parses multipart form, enforces 10MB limit, validates file |
-| `handleRepoLink` | `submit.go` | Decodes JSON, validates repo is a GitHub URL |
-| `Verify` | `handlers.go` | Handles credential verification by CID |
-| `writeJSON` | `handlers.go` | Shared helper — sets Content-Type, status, encodes JSON |
+| `400` | `INVALID_CID` | Empty, injection characters, invalid format/length |
+
+## Type Definitions
+
+```go
+// Response envelope
+type APIResponse struct {
+    Success bool   `json:"success"`
+    Data    any    `json:"data,omitempty"`
+    Error   *Error `json:"error,omitempty"`
+}
+
+type Error struct {
+    Code    string `json:"code"`
+    Message string `json:"message"`
+}
+
+// Domain types
+type HealthData     struct { Status string `json:"status"` }
+type SubmitResponse struct { Type string; Name string; Size int64; Message string }
+type VerifyResponse struct { CID string; Message string }
+type RepoRequest    struct { Repo string `json:"repo"` }
+```
 
 ## Running
 
 ```bash
-cd backend
-go run main.go
-```
-
-The server starts on `http://localhost:8080`. Verify with:
-
-```bash
+cd backend && go run main.go
 curl http://localhost:8080/health
 ```
 
 ## Testing
 
-### Run tests
-
 ```bash
-# From project root — all stacks
-./scripts/test.sh
-
-# Backend only
-./scripts/test-backend.sh
-
-# Verbose output
-./scripts/test-backend.sh -v
-
-# With HTML coverage report
-./scripts/test-backend.sh --html
-
-# Or directly with go test
+./scripts/test-backend.sh -v      # verbose with coverage
+./scripts/test-backend.sh --html  # HTML coverage report
 cd backend && go test -race -v ./...
 ```
 
-### Test coverage
+### Coverage
 
 | Package | Coverage |
 |---|---|
-| `handlers` | 87.8% |
-| `main` | 0% (server startup — not unit testable) |
-| **Total** | **76.8%** |
+| `handlers` | 94.3% |
+| `middleware` | 100% |
+| **Total** | **89.1%** |
 
-Per-function breakdown:
+### Test Summary
 
-| Function | Coverage |
-|---|---|
-| `Health` | 100% |
-| `Verify` | 100% |
-| `writeJSON` | 100% |
-| `Submit` | 100% |
-| `handleFileUpload` | 70% |
-| `handleRepoLink` | 100% |
-
-> `handleFileUpload` at 70% — the uncovered paths are `io.ReadAll` failure and the oversized file `MaxBytesReader` error, which are difficult to trigger in unit tests without mocking the reader.
-
-### Unit tests — `handlers_test.go`
-
-| Test | Endpoint | Verifies |
+| File | Tests | Covers |
 |---|---|---|
-| `TestHealth` | `GET /health` | 200 status, `{"status":"ok"}`, JSON Content-Type |
-| `TestVerify/valid_cid` | `GET /api/verify/{cid}` | CID extraction, 501 with CID in body |
-| `TestVerify/empty_cid` | `GET /api/verify/` | 400 with error for missing CID |
-| `TestWriteJSON` | (internal) | Status code, Content-Type, JSON encoding |
-
-### Unit tests — `submit_test.go`
-
-| Test | Verifies |
-|---|---|
-| `TestSubmitFileUpload` | Valid file upload → 200, correct type/name/size/message |
-| `TestSubmitFileUploadMissingField` | Wrong form field name → 400 |
-| `TestSubmitFileUploadEmptyFile` | 0-byte file → 400 |
-| `TestSubmitRepoLink` | Valid GitHub URL → 200, correct type/name/message |
-| `TestSubmitRepoLinkEmpty` | Empty repo string → 400 |
-| `TestSubmitRepoLinkWhitespace` | Whitespace-only repo → 400 |
-| `TestSubmitRepoLinkInvalidURL/gitlab` | GitLab URL → 400 |
-| `TestSubmitRepoLinkInvalidURL/http` | HTTP (not HTTPS) → 400 |
-| `TestSubmitRepoLinkInvalidURL/bare_string` | Non-URL string → 400 |
-| `TestSubmitInvalidJSON` | Malformed JSON → 400 |
-| `TestSubmitEmptyJSONBody` | Empty `{}` body → 400 |
-| `TestSubmitUnsupportedContentType` | `text/plain` → 415 |
-| `TestSubmitMissingContentType` | No Content-Type header → 400 |
-
-### Integration tests — `integration_test.go`
-
-| Test | Verifies |
-|---|---|
-| `TestIntegrationHealthEndpoint/GET_returns_200` | Full mux routing for health |
-| `TestIntegrationHealthEndpoint/POST_not_allowed` | POST method rejected |
-| `TestIntegrationSubmitEndpoint/POST_file_upload_through_mux` | File upload through full mux |
-| `TestIntegrationSubmitEndpoint/POST_repo_link_through_mux` | Repo link through full mux |
-| `TestIntegrationSubmitEndpoint/GET_not_allowed` | GET method rejected |
-| `TestIntegrationVerifyEndpoint/GET_with_valid_CID_through_mux` | CID routing through full mux |
-| `TestIntegrationVerifyEndpoint/POST_not_allowed` | POST method rejected |
-| `TestIntegrationUnknownRoute` | Unknown path returns non-200 |
-
-### Watch mode
-
-```bash
-./scripts/test-watch.sh backend
-```
-
-Automatically re-runs Go tests when `.go` files change.
+| `types_test.go` | 31 | Filename, repo URL, CID validators (valid + invalid inputs) |
+| `handlers_test.go` | 7 | Health, Verify (valid CID, empty, injection, too short), writeJSON |
+| `submit_test.go` | 19 | File upload, repo link, path traversal, blocked extensions, unknown fields |
+| `integration_test.go` | 13 | Mux routing, method enforcement, security headers, request ID, response envelope |
+| `middleware_test.go` | 4 | SecurityHeaders, RequestID (uniqueness), Recovery (panic + no-panic) |
 
 ## Next Steps
 

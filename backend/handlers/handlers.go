@@ -6,23 +6,31 @@ import (
 )
 
 func Health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	respondOK(w, HealthData{Status: "ok"})
 }
 
 func Verify(w http.ResponseWriter, r *http.Request) {
 	cid := r.PathValue("cid")
-	if cid == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cid is required"})
+	if err := ValidateCID(cid); err != nil {
+		respondError(w, http.StatusBadRequest, "INVALID_CID", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusNotImplemented, map[string]string{
-		"message": "verify endpoint not yet implemented",
-		"cid":     cid,
+	respondOK(w, VerifyResponse{
+		CID:     cid,
+		Message: "verify endpoint not yet implemented",
 	})
 }
 
-func writeJSON(w http.ResponseWriter, status int, data any) {
+func respondOK(w http.ResponseWriter, data any) {
+	writeJSON(w, http.StatusOK, APIResponse{Success: true, Data: data})
+}
+
+func respondError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, APIResponse{Success: false, Error: &Error{Code: code, Message: message}})
+}
+
+func writeJSON(w http.ResponseWriter, status int, resp APIResponse) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	json.NewEncoder(w).Encode(resp)
 }

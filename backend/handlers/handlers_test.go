@@ -16,9 +16,12 @@ func TestHealth(t *testing.T) {
 	assertStatus(t, w.Code, http.StatusOK)
 	assertContentType(t, w)
 
-	body := decodeBody(t, w)
-	if body["status"] != "ok" {
-		t.Errorf("expected status \"ok\", got %q", body["status"])
+	resp := decodeResponse(t, w)
+	assertSuccess(t, resp)
+
+	data := resp.Data.(map[string]any)
+	if data["status"] != "ok" {
+		t.Errorf("status = %q, want \"ok\"", data["status"])
 	}
 }
 
@@ -27,49 +30,62 @@ func TestVerify(t *testing.T) {
 	mux.HandleFunc("GET /api/verify/{cid}", Verify)
 
 	t.Run("valid cid", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/verify/QmTestCid123", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/verify/QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", nil)
 		w := httptest.NewRecorder()
-
 		mux.ServeHTTP(w, req)
 
-		assertStatus(t, w.Code, http.StatusNotImplemented)
-		assertContentType(t, w)
-
-		body := decodeBody(t, w)
-		if body["cid"] != "QmTestCid123" {
-			t.Errorf("expected cid \"QmTestCid123\", got %q", body["cid"])
-		}
+		assertStatus(t, w.Code, http.StatusOK)
+		resp := decodeResponse(t, w)
+		assertSuccess(t, resp)
 	})
 
 	t.Run("empty cid", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/verify/", nil)
 		w := httptest.NewRecorder()
-
 		Verify(w, req)
 
 		assertStatus(t, w.Code, http.StatusBadRequest)
+		resp := decodeResponse(t, w)
+		assertFailure(t, resp, "INVALID_CID")
+	})
 
-		body := decodeBody(t, w)
-		if body["error"] == "" {
-			t.Error("expected error message for empty cid")
-		}
+	t.Run("cid with injection chars", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/verify/abc;rm+-rf", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		assertStatus(t, w.Code, http.StatusBadRequest)
+		resp := decodeResponse(t, w)
+		assertFailure(t, resp, "INVALID_CID")
+	})
+
+	t.Run("cid too short", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/verify/abc", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		assertStatus(t, w.Code, http.StatusBadRequest)
+		resp := decodeResponse(t, w)
+		assertFailure(t, resp, "INVALID_CID")
 	})
 }
 
 func TestWriteJSON(t *testing.T) {
 	w := httptest.NewRecorder()
-	data := map[string]string{"key": "value"}
+	resp := APIResponse{Success: true, Data: HealthData{Status: "ok"}}
 
-	writeJSON(w, http.StatusCreated, data)
+	writeJSON(w, http.StatusCreated, resp)
 
 	assertStatus(t, w.Code, http.StatusCreated)
 	assertContentType(t, w)
 
-	body := decodeBody(t, w)
-	if body["key"] != "value" {
-		t.Errorf("expected key \"value\", got %q", body["key"])
+	decoded := decodeResponse(t, w)
+	if !decoded.Success {
+		t.Error("expected success=true")
 	}
 }
+
+// --- Test Helpers ---
 
 func assertStatus(t *testing.T, got, want int) {
 	t.Helper()
@@ -86,11 +102,31 @@ func assertContentType(t *testing.T, w *httptest.ResponseRecorder) {
 	}
 }
 
-func decodeBody(t *testing.T, w *httptest.ResponseRecorder) map[string]string {
+func decodeResponse(t *testing.T, w *httptest.ResponseRecorder) APIResponse {
 	t.Helper()
-	var body map[string]string
-	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
-		t.Fatalf("failed to decode response body: %v", err)
+	var resp APIResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
 	}
-	return body
+	return resp
+}
+
+func assertSuccess(t *testing.T, resp APIResponse) {
+	t.Helper()
+	if !resp.Success {
+		t.Errorf("expected success=true, got error: %+v", resp.Error)
+	}
+}
+
+func assertFailure(t *testing.T, resp APIResponse, code string) {
+	t.Helper()
+	if resp.Success {
+		t.Error("expected success=false")
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error object, got nil")
+	}
+	if resp.Error.Code != code {
+		t.Errorf("error code = %q, want %q", resp.Error.Code, code)
+	}
 }

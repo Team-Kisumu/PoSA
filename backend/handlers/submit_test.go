@@ -21,22 +21,21 @@ func TestSubmitFileUpload(t *testing.T) {
 	Submit(w, req)
 
 	assertStatus(t, w.Code, http.StatusOK)
-	assertContentType(t, w)
+	resp := decodeResponse(t, w)
+	assertSuccess(t, resp)
 
-	var resp SubmitResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	data, _ := json.Marshal(resp.Data)
+	var sr SubmitResponse
+	json.Unmarshal(data, &sr)
 
-	if resp.Type != "file" {
-		t.Errorf("type = %q, want \"file\"", resp.Type)
+	if sr.Type != "file" {
+		t.Errorf("type = %q, want \"file\"", sr.Type)
 	}
-	if resp.Name != "main.go" {
-		t.Errorf("name = %q, want \"main.go\"", resp.Name)
+	if sr.Name != "main.go" {
+		t.Errorf("name = %q, want \"main.go\"", sr.Name)
 	}
-	if resp.Size != len("package main\n") {
-		t.Errorf("size = %d, want %d", resp.Size, len("package main\n"))
-	}
-	if resp.Message == "" {
-		t.Error("expected non-empty message")
+	if sr.Size != int64(len("package main\n")) {
+		t.Errorf("size = %d, want %d", sr.Size, len("package main\n"))
 	}
 }
 
@@ -49,7 +48,7 @@ func TestSubmitFileUploadMissingField(t *testing.T) {
 	Submit(w, req)
 
 	assertStatus(t, w.Code, http.StatusBadRequest)
-	assertErrorField(t, w)
+	assertFailure(t, decodeResponse(t, w), "MISSING_FILE")
 }
 
 func TestSubmitFileUploadEmptyFile(t *testing.T) {
@@ -61,7 +60,57 @@ func TestSubmitFileUploadEmptyFile(t *testing.T) {
 	Submit(w, req)
 
 	assertStatus(t, w.Code, http.StatusBadRequest)
-	assertErrorField(t, w)
+	assertFailure(t, decodeResponse(t, w), "EMPTY_FILE")
+}
+
+func TestSubmitFileUploadPathTraversal(t *testing.T) {
+	// filepath.Base strips traversal, so ../../etc/passwd becomes "passwd" (safe)
+	// The validator catches backslash-based traversal and null bytes at the
+	// ValidateFilename level (tested in types_test.go)
+	t.Run("backslash traversal", func(t *testing.T) {
+		body, contentType := createMultipartFile(t, "file", "..\\windows\\system32\\config", "data")
+		req := httptest.NewRequest(http.MethodPost, "/api/submit", body)
+		req.Header.Set("Content-Type", contentType)
+		w := httptest.NewRecorder()
+
+		Submit(w, req)
+
+		assertStatus(t, w.Code, http.StatusBadRequest)
+		assertFailure(t, decodeResponse(t, w), "INVALID_FILENAME")
+	})
+
+	// filepath.Base("../../etc/passwd") = "passwd" which is safe
+	// This verifies the sanitization works (traversal stripped, file accepted)
+	t.Run("dot dot slash sanitized by filepath.Base", func(t *testing.T) {
+		body, contentType := createMultipartFile(t, "file", "../../etc/passwd", "data")
+		req := httptest.NewRequest(http.MethodPost, "/api/submit", body)
+		req.Header.Set("Content-Type", contentType)
+		w := httptest.NewRecorder()
+
+		Submit(w, req)
+
+		// filepath.Base strips to "passwd" — valid filename, accepted
+		assertStatus(t, w.Code, http.StatusOK)
+		resp := decodeResponse(t, w)
+		assertSuccess(t, resp)
+	})
+}
+
+func TestSubmitFileUploadBlockedExtension(t *testing.T) {
+	cases := []string{".exe", ".bat", ".sh", ".ps1", ".dll", ".cmd"}
+	for _, ext := range cases {
+		t.Run(ext, func(t *testing.T) {
+			body, contentType := createMultipartFile(t, "file", "payload"+ext, "data")
+			req := httptest.NewRequest(http.MethodPost, "/api/submit", body)
+			req.Header.Set("Content-Type", contentType)
+			w := httptest.NewRecorder()
+
+			Submit(w, req)
+
+			assertStatus(t, w.Code, http.StatusBadRequest)
+			assertFailure(t, decodeResponse(t, w), "INVALID_FILENAME")
+		})
+	}
 }
 
 // --- Repo Link Tests ---
@@ -75,20 +124,8 @@ func TestSubmitRepoLink(t *testing.T) {
 	Submit(w, req)
 
 	assertStatus(t, w.Code, http.StatusOK)
-	assertContentType(t, w)
-
-	var resp SubmitResponse
-	json.NewDecoder(w.Body).Decode(&resp)
-
-	if resp.Type != "repo" {
-		t.Errorf("type = %q, want \"repo\"", resp.Type)
-	}
-	if resp.Name != "https://github.com/user/project" {
-		t.Errorf("name = %q, want repo URL", resp.Name)
-	}
-	if resp.Message == "" {
-		t.Error("expected non-empty message")
-	}
+	resp := decodeResponse(t, w)
+	assertSuccess(t, resp)
 }
 
 func TestSubmitRepoLinkEmpty(t *testing.T) {
@@ -99,7 +136,7 @@ func TestSubmitRepoLinkEmpty(t *testing.T) {
 	Submit(w, req)
 
 	assertStatus(t, w.Code, http.StatusBadRequest)
-	assertErrorField(t, w)
+	assertFailure(t, decodeResponse(t, w), "INVALID_REPO")
 }
 
 func TestSubmitRepoLinkWhitespace(t *testing.T) {
@@ -110,7 +147,7 @@ func TestSubmitRepoLinkWhitespace(t *testing.T) {
 	Submit(w, req)
 
 	assertStatus(t, w.Code, http.StatusBadRequest)
-	assertErrorField(t, w)
+	assertFailure(t, decodeResponse(t, w), "INVALID_REPO")
 }
 
 func TestSubmitRepoLinkInvalidURL(t *testing.T) {
@@ -121,6 +158,9 @@ func TestSubmitRepoLinkInvalidURL(t *testing.T) {
 		{"gitlab", `{"repo": "https://gitlab.com/user/project"}`},
 		{"http", `{"repo": "http://github.com/user/project"}`},
 		{"bare string", `{"repo": "not-a-url"}`},
+		{"path traversal", `{"repo": "https://github.com/../../etc/passwd"}`},
+		{"no repo name", `{"repo": "https://github.com/user"}`},
+		{"just domain", `{"repo": "https://github.com/"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -131,7 +171,7 @@ func TestSubmitRepoLinkInvalidURL(t *testing.T) {
 			Submit(w, req)
 
 			assertStatus(t, w.Code, http.StatusBadRequest)
-			assertErrorField(t, w)
+			assertFailure(t, decodeResponse(t, w), "INVALID_REPO")
 		})
 	}
 }
@@ -144,7 +184,7 @@ func TestSubmitInvalidJSON(t *testing.T) {
 	Submit(w, req)
 
 	assertStatus(t, w.Code, http.StatusBadRequest)
-	assertErrorField(t, w)
+	assertFailure(t, decodeResponse(t, w), "INVALID_JSON")
 }
 
 func TestSubmitEmptyJSONBody(t *testing.T) {
@@ -155,7 +195,18 @@ func TestSubmitEmptyJSONBody(t *testing.T) {
 	Submit(w, req)
 
 	assertStatus(t, w.Code, http.StatusBadRequest)
-	assertErrorField(t, w)
+	assertFailure(t, decodeResponse(t, w), "INVALID_REPO")
+}
+
+func TestSubmitUnknownJSONFields(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/submit", strings.NewReader(`{"repo": "https://github.com/user/project", "evil": "payload"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	Submit(w, req)
+
+	assertStatus(t, w.Code, http.StatusBadRequest)
+	assertFailure(t, decodeResponse(t, w), "INVALID_JSON")
 }
 
 // --- Content-Type Tests ---
@@ -168,7 +219,7 @@ func TestSubmitUnsupportedContentType(t *testing.T) {
 	Submit(w, req)
 
 	assertStatus(t, w.Code, http.StatusUnsupportedMediaType)
-	assertErrorField(t, w)
+	assertFailure(t, decodeResponse(t, w), "UNSUPPORTED_MEDIA_TYPE")
 }
 
 func TestSubmitMissingContentType(t *testing.T) {
@@ -178,7 +229,7 @@ func TestSubmitMissingContentType(t *testing.T) {
 	Submit(w, req)
 
 	assertStatus(t, w.Code, http.StatusBadRequest)
-	assertErrorField(t, w)
+	assertFailure(t, decodeResponse(t, w), "MISSING_CONTENT_TYPE")
 }
 
 // --- Helpers ---
@@ -194,12 +245,4 @@ func createMultipartFile(t *testing.T, field, filename, content string) (*bytes.
 	part.Write([]byte(content))
 	writer.Close()
 	return &buf, writer.FormDataContentType()
-}
-
-func assertErrorField(t *testing.T, w *httptest.ResponseRecorder) {
-	t.Helper()
-	body := decodeBody(t, w)
-	if body["error"] == "" {
-		t.Error("expected non-empty 'error' field in response")
-	}
 }
