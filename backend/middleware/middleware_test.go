@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+// TestSecurityHeaders verifies that the SecurityHeaders middleware injects
+// all expected defensive headers with the correct values.
 func TestSecurityHeaders(t *testing.T) {
 	handler := SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -31,6 +33,8 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
+// TestRequestID verifies that the RequestID middleware generates a 16-char
+// hex ID and that consecutive requests produce unique IDs.
 func TestRequestID(t *testing.T) {
 	handler := RequestID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -48,7 +52,7 @@ func TestRequestID(t *testing.T) {
 		t.Errorf("X-Request-ID length = %d, want 16", len(rid))
 	}
 
-	// Uniqueness
+	// Verify uniqueness: a second request should produce a different ID.
 	w2 := httptest.NewRecorder()
 	handler.ServeHTTP(w2, req)
 	if w2.Header().Get("X-Request-ID") == rid {
@@ -56,6 +60,8 @@ func TestRequestID(t *testing.T) {
 	}
 }
 
+// TestRecovery verifies that the Recovery middleware catches panics and
+// returns a 500 JSON error response instead of crashing the server.
 func TestRecovery(t *testing.T) {
 	handler := Recovery(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("test panic")
@@ -73,6 +79,8 @@ func TestRecovery(t *testing.T) {
 	}
 }
 
+// TestRecoveryNoPanic verifies that the Recovery middleware passes through
+// normally when no panic occurs.
 func TestRecoveryNoPanic(t *testing.T) {
 	handler := Recovery(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

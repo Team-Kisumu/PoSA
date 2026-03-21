@@ -10,6 +10,8 @@ import (
 	"github.com/Murzuqisah/PoSA/middleware"
 )
 
+// newTestMux creates a ServeMux with all API routes registered,
+// matching the production configuration in main.go.
 func newTestMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", Health)
@@ -18,6 +20,8 @@ func newTestMux() *http.ServeMux {
 	return mux
 }
 
+// newTestMuxWithMiddleware wraps the test mux with the full middleware chain
+// (Recovery → RequestID → SecurityHeaders) to test the complete request pipeline.
 func newTestMuxWithMiddleware() http.Handler {
 	return middleware.Recovery(
 		middleware.RequestID(
@@ -26,6 +30,8 @@ func newTestMuxWithMiddleware() http.Handler {
 	)
 }
 
+// TestIntegrationHealthEndpoint tests the health endpoint through the mux,
+// verifying both successful GET and rejected POST methods.
 func TestIntegrationHealthEndpoint(t *testing.T) {
 	mux := newTestMux()
 
@@ -40,6 +46,7 @@ func TestIntegrationHealthEndpoint(t *testing.T) {
 	})
 
 	t.Run("POST not allowed", func(t *testing.T) {
+		// Mux should reject POST since only GET is registered for /health.
 		req := httptest.NewRequest(http.MethodPost, "/health", nil)
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
@@ -50,6 +57,8 @@ func TestIntegrationHealthEndpoint(t *testing.T) {
 	})
 }
 
+// TestIntegrationSubmitEndpoint tests the submit endpoint through the mux
+// with both file upload and repo link submissions, plus method enforcement.
 func TestIntegrationSubmitEndpoint(t *testing.T) {
 	mux := newTestMux()
 
@@ -78,6 +87,7 @@ func TestIntegrationSubmitEndpoint(t *testing.T) {
 	})
 
 	t.Run("GET not allowed", func(t *testing.T) {
+		// Mux should reject GET since only POST is registered for /api/submit.
 		req := httptest.NewRequest(http.MethodGet, "/api/submit", nil)
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
@@ -88,6 +98,8 @@ func TestIntegrationSubmitEndpoint(t *testing.T) {
 	})
 }
 
+// TestIntegrationVerifyEndpoint tests the verify endpoint through the mux
+// with a valid CID and rejected POST method.
 func TestIntegrationVerifyEndpoint(t *testing.T) {
 	mux := newTestMux()
 
@@ -112,6 +124,8 @@ func TestIntegrationVerifyEndpoint(t *testing.T) {
 	})
 }
 
+// TestIntegrationUnknownRoute verifies that requests to unregistered routes
+// do not return 200 (the default mux returns 404).
 func TestIntegrationUnknownRoute(t *testing.T) {
 	mux := newTestMux()
 
@@ -124,6 +138,8 @@ func TestIntegrationUnknownRoute(t *testing.T) {
 	}
 }
 
+// TestIntegrationSecurityHeaders verifies that the middleware chain injects
+// all expected security headers on every response.
 func TestIntegrationSecurityHeaders(t *testing.T) {
 	handler := newTestMuxWithMiddleware()
 
@@ -133,6 +149,7 @@ func TestIntegrationSecurityHeaders(t *testing.T) {
 
 	assertStatus(t, w.Code, http.StatusOK)
 
+	// Verify each security header is present with the correct value.
 	headers := map[string]string{
 		"X-Content-Type-Options":  "nosniff",
 		"X-Frame-Options":         "DENY",
@@ -148,6 +165,8 @@ func TestIntegrationSecurityHeaders(t *testing.T) {
 	}
 }
 
+// TestIntegrationRequestID verifies that the RequestID middleware generates
+// a unique 16-character hex ID on every response.
 func TestIntegrationRequestID(t *testing.T) {
 	handler := newTestMuxWithMiddleware()
 
@@ -164,6 +183,8 @@ func TestIntegrationRequestID(t *testing.T) {
 	}
 }
 
+// TestIntegrationResponseEnvelope verifies that all responses follow the
+// standard APIResponse envelope format with "success" and either "data" or "error".
 func TestIntegrationResponseEnvelope(t *testing.T) {
 	handler := newTestMuxWithMiddleware()
 
@@ -172,6 +193,7 @@ func TestIntegrationResponseEnvelope(t *testing.T) {
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)
 
+		// Parse as raw JSON to check envelope structure without type binding.
 		var raw map[string]json.RawMessage
 		json.NewDecoder(w.Body).Decode(&raw)
 
@@ -184,6 +206,7 @@ func TestIntegrationResponseEnvelope(t *testing.T) {
 	})
 
 	t.Run("error envelope", func(t *testing.T) {
+		// Missing Content-Type triggers an error response.
 		req := httptest.NewRequest(http.MethodPost, "/api/submit", strings.NewReader("data"))
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)

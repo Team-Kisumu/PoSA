@@ -8,6 +8,9 @@ import (
 	"strings"
 )
 
+// Submit handles POST /api/submit. It routes to the appropriate sub-handler
+// based on Content-Type: multipart/form-data for file uploads, or
+// application/json for GitHub repo link submissions.
 func Submit(w http.ResponseWriter, r *http.Request) {
 	ct := r.Header.Get("Content-Type")
 	if ct == "" {
@@ -26,7 +29,14 @@ func Submit(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleFileUpload processes multipart file uploads from the "file" form field.
+// Security measures:
+//   - MaxBytesReader caps the body at 10MB to prevent resource exhaustion.
+//   - filepath.Base strips directory components to neutralize path traversal.
+//   - ValidateFilename enforces a safe character whitelist and blocks dangerous extensions.
+//   - Empty files are rejected to prevent no-op submissions.
 func handleFileUpload(w http.ResponseWriter, r *http.Request) {
+	// Cap request body size to prevent denial-of-service via large uploads.
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
@@ -41,6 +51,8 @@ func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	// Sanitize filename: filepath.Base strips any directory prefix (e.g. "../../etc/passwd" → "passwd"),
+	// then ValidateFilename enforces the safe character whitelist and blocks dangerous extensions.
 	filename := filepath.Base(header.Filename)
 	if err := ValidateFilename(filename); err != nil {
 		respondError(w, http.StatusBadRequest, "INVALID_FILENAME", err.Error())
@@ -53,6 +65,7 @@ func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject empty files — they provide no content for AI evaluation.
 	if len(content) == 0 {
 		respondError(w, http.StatusBadRequest, "EMPTY_FILE", "file is empty")
 		return
@@ -66,9 +79,16 @@ func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleRepoLink processes JSON requests containing a GitHub repository URL.
+// Security measures:
+//   - MaxBytesReader caps the body at 1MB to prevent oversized JSON payloads.
+//   - DisallowUnknownFields rejects unexpected JSON keys (prevents parameter pollution).
+//   - ValidateRepoURL enforces HTTPS, github.com host, owner/repo path, and blocks traversal.
 func handleRepoLink(w http.ResponseWriter, r *http.Request) {
+	// Cap JSON body size to prevent resource exhaustion.
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodySize)
 
+	// Strict JSON decoding: reject payloads with unexpected fields.
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
