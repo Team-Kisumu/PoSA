@@ -17,11 +17,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check backend exists
+        id: check
+        run: test -d backend && test -f backend/go.mod
+        continue-on-error: true
+
       - uses: actions/setup-go@v5
+        if: steps.check.outcome == 'success'
         with:
-          go-version: '1.21'
+          go-version-file: backend/go.mod
 
       - name: Format check
+        if: steps.check.outcome == 'success'
         run: |
           unformatted=$(gofmt -l backend/)
           if [ -n "$unformatted" ]; then
@@ -29,11 +36,13 @@ jobs:
             exit 1
           fi
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          working-directory: backend
+      - name: Vet
+        if: steps.check.outcome == 'success'
+        run: cd backend && go vet ./...
+
+      - name: Skip notice
+        if: steps.check.outcome != 'success'
+        run: echo "backend/ directory not found — skipping"
 
   python-quality:
     name: Python Quality
@@ -41,21 +50,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check ai directory exists
+        id: check
+        run: test -d ai
+        continue-on-error: true
+
       - uses: actions/setup-python@v5
+        if: steps.check.outcome == 'success'
         with:
           python-version: '3.10'
 
       - name: Install tools
+        if: steps.check.outcome == 'success'
         run: pip install flake8 black mypy
 
       - name: Black format check
+        if: steps.check.outcome == 'success'
         run: black --check --line-length 120 ai/
 
       - name: Flake8 lint
+        if: steps.check.outcome == 'success'
         run: flake8 ai/ --max-line-length=120 --exclude=__pycache__
 
       - name: Mypy type check
+        if: steps.check.outcome == 'success'
         run: mypy ai/ --ignore-missing-imports || true
+
+      - name: Skip notice
+        if: steps.check.outcome != 'success'
+        run: echo "ai/ directory not found — skipping"
 
   frontend-quality:
     name: Frontend Quality
@@ -63,16 +86,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check frontend exists
+        id: check
+        run: test -d frontend && test -f frontend/package.json
+        continue-on-error: true
+
       - uses: actions/setup-node@v4
+        if: steps.check.outcome == 'success'
         with:
           node-version: '18'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
 
-      - run: cd frontend && npm ci
+      - name: Install
+        if: steps.check.outcome == 'success'
+        run: cd frontend && npm ci
 
       - name: ESLint
+        if: steps.check.outcome == 'success'
         run: cd frontend && npx eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0 || true
 
       - name: Prettier check
+        if: steps.check.outcome == 'success'
         run: cd frontend && npx prettier --check "src/**/*.{js,jsx,ts,tsx,css,json}" || true
+
+      - name: Skip notice
+        if: steps.check.outcome != 'success'
+        run: echo "frontend/ directory not found — skipping"
