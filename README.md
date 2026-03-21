@@ -1,6 +1,6 @@
 # Proof-of-Skill AI (PoSA)
 
-### AI-Verified Work. Blockchain-Trusted Proof.
+### AI-Verified Work. Blockchain-Trusted Proof
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -111,7 +111,7 @@ graph LR
 
 ## Project Structure
 
-```
+```txt
 posa/
 ├── backend/
 │   ├── main.go              # API entrypoint
@@ -138,19 +138,23 @@ posa/
 The project is built in **six incremental phases**:
 
 ### Phase 1 — Backend API (Go)
+
 - REST API to accept file uploads and repo links
 - Input validation and sanitization layer
 
 ### Phase 2 — AI Engine (Python)
+
 - Code quality analysis (bugs, security vulnerabilities, logic correctness)
 - Writing evaluation (quality, originality)
 - Scoring system (0–100) with detailed explanations
 
 ### Phase 3 — Decentralized Storage
+
 - IPFS/Filecoin integration for report persistence
 - CID generation and retrieval
 
 ### Phase 4 — Blockchain Anchoring
+
 - Smart contract deployment (Flow or NEAR)
 - CID hash written on-chain, credential minted
 
@@ -164,11 +168,13 @@ pub contract Proof {
 ```
 
 ### Phase 5 — Frontend
+
 - Upload interface (file, paste, GitHub link)
 - Real-time AI feedback display
 - Proof minting and verification UI
 
 ### Phase 6 — Integration & Hardening
+
 - End-to-end pipeline testing
 - Security audits, input fuzzing, contract verification
 
@@ -188,7 +194,7 @@ pub contract Proof {
 
 ```bash
 # Clone the repository
-git clone https://github.com/<your-username>/PoSA.git
+git clone https://github.com/Murzuqisah/PoSA.git
 cd PoSA
 
 # Backend
@@ -232,6 +238,7 @@ python evaluator.py
 ### Verification
 
 Anyone can independently verify a credential:
+
 - Retrieve the report via its **CID** from IPFS
 - Compare the CID hash against the **on-chain record**
 
@@ -241,7 +248,7 @@ Anyone can independently verify a credential:
 
 ### Example 1 — Code Submission
 
-```
+```zsh
 $ curl -X POST http://localhost:8080/api/submit \
     -F "file=@main.go" \
     -H "Content-Type: multipart/form-data"
@@ -263,7 +270,7 @@ $ curl -X POST http://localhost:8080/api/submit \
 
 ### Example 2 — GitHub Repo Analysis
 
-```
+```zsh
 $ curl -X POST http://localhost:8080/api/submit \
     -H "Content-Type: application/json" \
     -d '{"repo": "https://github.com/user/project"}'
@@ -281,7 +288,7 @@ $ curl -X POST http://localhost:8080/api/submit \
 
 ### Example 3 — Verify a Credential
 
-```
+```zsh
 $ curl http://localhost:8080/api/verify/QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco
 
 {
