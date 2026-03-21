@@ -9,12 +9,6 @@ func Health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func Submit(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]string{
-		"message": "submit endpoint not yet implemented",
-	})
-}
-
 func Verify(w http.ResponseWriter, r *http.Request) {
 	cid := r.PathValue("cid")
 	if cid == "" {

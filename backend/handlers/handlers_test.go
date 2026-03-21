@@ -22,21 +22,6 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-func TestSubmit(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/submit", nil)
-	w := httptest.NewRecorder()
-
-	Submit(w, req)
-
-	assertStatus(t, w.Code, http.StatusNotImplemented)
-	assertContentType(t, w)
-
-	body := decodeBody(t, w)
-	if body["message"] == "" {
-		t.Error("expected non-empty message")
-	}
-}
-
 func TestVerify(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/verify/{cid}", Verify)
