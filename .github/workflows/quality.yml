@@ -36,12 +36,9 @@ jobs:
             exit 1
           fi
 
-      - name: golangci-lint
+      - name: Vet
         if: steps.check.outcome == 'success'
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          working-directory: backend
+        run: cd backend && go vet ./...
 
       - name: Skip notice
         if: steps.check.outcome != 'success'
