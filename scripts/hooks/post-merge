@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# post-merge: Auto-update dependencies after merge/pull
+set -e
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+CHANGED=$(git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD 2>/dev/null || true)
+[ -z "$CHANGED" ] && exit 0
+
+# --- Go modules ---
+if echo "$CHANGED" | grep -q 'backend/go\.\(mod\|sum\)'; then
+    echo -e "${YELLOW}Go dependencies changed — running go mod download...${NC}"
+    (cd backend && go mod download)
+    echo -e "${GREEN}✓ Go dependencies updated${NC}"
+fi
+
+# --- Python requirements ---
+if echo "$CHANGED" | grep -q 'ai/requirements'; then
+    echo -e "${YELLOW}Python dependencies changed — running pip install...${NC}"
+    (cd ai && pip install -r requirements.txt -q)
+    echo -e "${GREEN}✓ Python dependencies updated${NC}"
+fi
+
+# --- Node packages ---
+if echo "$CHANGED" | grep -q 'frontend/package-lock\.json\|frontend/package\.json'; then
+    echo -e "${YELLOW}Node dependencies changed — running npm ci...${NC}"
+    (cd frontend && npm ci --silent)
+    echo -e "${GREEN}✓ Node dependencies updated${NC}"
+fi

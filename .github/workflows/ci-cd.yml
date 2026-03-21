@@ -1,0 +1,109 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, versions]
+  pull_request:
+    branches: [main, versions]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Build
+        run: go build -o posa-backend ./...
+
+      - name: Upload coverage
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.out
+
+  ai-engine:
+    name: AI Engine (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint
+        run: |
+          pip install flake8
+          flake8 . --max-line-length=120 --exclude=__pycache__
+
+      - name: Test
+        run: pytest --tb=short -q
+
+  frontend:
+    name: Frontend (Node)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Build
+        run: npm run build
+
+  contracts:
+    name: Smart Contracts
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.message, 'contract') || github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate contract syntax
+        run: |
+          echo "Contract validation placeholder"
+          # flow project deploy --update (Flow)
+          # cargo build --release (NEAR/Rust)

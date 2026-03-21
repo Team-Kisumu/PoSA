@@ -1,0 +1,78 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [main, versions]
+  pull_request:
+    branches: [main, versions]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  go-quality:
+    name: Go Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Format check
+        run: |
+          unformatted=$(gofmt -l backend/)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files:" && echo "$unformatted"
+            exit 1
+          fi
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: backend
+
+  python-quality:
+    name: Python Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install tools
+        run: pip install flake8 black mypy
+
+      - name: Black format check
+        run: black --check --line-length 120 ai/
+
+      - name: Flake8 lint
+        run: flake8 ai/ --max-line-length=120 --exclude=__pycache__
+
+      - name: Mypy type check
+        run: mypy ai/ --ignore-missing-imports || true
+
+  frontend-quality:
+    name: Frontend Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: cd frontend && npm ci
+
+      - name: ESLint
+        run: cd frontend && npx eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0 || true
+
+      - name: Prettier check
+        run: cd frontend && npx prettier --check "src/**/*.{js,jsx,ts,tsx,css,json}" || true

@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# pre-commit: Format staged code before commit
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$STAGED" ] && exit 0
+
+ERRORS=0
+
+# --- Go: gofmt ---
+GO_FILES=$(echo "$STAGED" | grep '\.go$' || true)
+if [ -n "$GO_FILES" ] && command -v gofmt &>/dev/null; then
+    echo -e "${YELLOW}Formatting Go files...${NC}"
+    for f in $GO_FILES; do
+        [ -f "$f" ] || continue
+        gofmt -w "$f"
+        git add "$f"
+    done
+    echo -e "${GREEN}✓ Go files formatted${NC}"
+fi
+
+# --- Python: black ---
+PY_FILES=$(echo "$STAGED" | grep '\.py$' || true)
+if [ -n "$PY_FILES" ] && command -v black &>/dev/null; then
+    echo -e "${YELLOW}Formatting Python files...${NC}"
+    for f in $PY_FILES; do
+        [ -f "$f" ] || continue
+        black --quiet --line-length 120 "$f"
+        git add "$f"
+    done
+    echo -e "${GREEN}✓ Python files formatted${NC}"
+elif [ -n "$PY_FILES" ]; then
+    echo -e "${YELLOW}⚠ black not found, skipping Python formatting (pip install black)${NC}"
+fi
+
+# --- JS/TS: prettier ---
+JS_FILES=$(echo "$STAGED" | grep -E '\.(js|jsx|ts|tsx|css|json)$' || true)
+if [ -n "$JS_FILES" ] && command -v npx &>/dev/null && [ -f "frontend/node_modules/.bin/prettier" ]; then
+    echo -e "${YELLOW}Formatting JS/TS files...${NC}"
+    for f in $JS_FILES; do
+        [ -f "$f" ] || continue
+        npx --prefix frontend prettier --write "$f"
+        git add "$f"
+    done
+    echo -e "${GREEN}✓ JS/TS files formatted${NC}"
+fi
+
+# --- Reject .env files ---
+ENV_FILES=$(echo "$STAGED" | grep -E '\.env' || true)
+if [ -n "$ENV_FILES" ]; then
+    echo -e "${RED}✗ Blocked: .env files must not be committed${NC}"
+    echo "$ENV_FILES"
+    ERRORS=1
+fi
+
+exit $ERRORS

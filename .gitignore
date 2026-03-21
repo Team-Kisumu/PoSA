@@ -30,3 +30,13 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+.amazonq
+PoSA_*
+
+# Build artifacts
+posa-backend
+__pycache__/
+*.pyc
+node_modules/
+.next/
