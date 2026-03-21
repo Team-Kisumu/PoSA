@@ -22,6 +22,12 @@ type RepoRequest struct {
 
 func Submit(w http.ResponseWriter, r *http.Request) {
 	ct := r.Header.Get("Content-Type")
+	if ct == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Content-Type header is required",
+		})
+		return
+	}
 
 	switch {
 	case strings.HasPrefix(ct, "multipart/form-data"):
@@ -62,6 +68,20 @@ func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if header.Filename == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "filename is required",
+		})
+		return
+	}
+
+	if len(content) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "file is empty",
+		})
+		return
+	}
+
 	writeJSON(w, http.StatusOK, SubmitResponse{
 		Type:    "file",
 		Name:    header.Filename,
@@ -79,6 +99,7 @@ func handleRepoLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Repo = strings.TrimSpace(req.Repo)
 	if req.Repo == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "'repo' field is required",

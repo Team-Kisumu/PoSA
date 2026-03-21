@@ -6,12 +6,14 @@ This document covers the test strategy, tooling, and instructions for running te
 
 Each component has its own test suite using the idiomatic testing framework for its language:
 
-| Component | Framework | Coverage Target |
-|---|---|---|
-| Backend (Go) | `testing` + `httptest` | 80%+ |
-| AI Engine (Python) | `pytest` | 80%+ |
-| Frontend (Node) | Jest / Vitest | 70%+ |
-| Smart Contracts | Flow Test / cargo test | 100% |
+| Component | Framework | Coverage Target | Current |
+|---|---|---|---|
+| Backend (Go) | `testing` + `httptest` | 80%+ | 87.8% ✅ |
+| AI Engine (Python) | `pytest` | 80%+ | — |
+| Frontend (Node) | Jest / Vitest | 70%+ | — |
+| Smart Contracts | Flow Test / cargo test | 100% | — |
+
+Tests are split into **unit tests** (isolated handler logic) and **integration tests** (full mux routing with method enforcement).
 
 ## Test Scripts
 
@@ -25,24 +27,6 @@ All scripts are in `scripts/` and executable from the project root.
 
 Runs tests for every stack that has a directory present. Skips missing components gracefully. Exits non-zero if any stack fails — suitable for CI.
 
-**Output:**
-```
-═══════════════════════════════════
-  PoSA Test Suite
-═══════════════════════════════════
-
-▶ Backend (Go)
-ok   github.com/Murzuqisah/PoSA/handlers  1.015s  coverage: 100.0%
-✓ Backend (Go) passed
-
-⊘ AI Engine (Python) — skipped (directory not found)
-⊘ Frontend (Node) — skipped (directory not found)
-
-═══════════════════════════════════
-  Results: 1 passed, 0 failed
-═══════════════════════════════════
-```
-
 ### Backend tests only
 
 ```bash
@@ -54,7 +38,6 @@ ok   github.com/Murzuqisah/PoSA/handlers  1.015s  coverage: 100.0%
 
 # Generate HTML coverage report
 ./scripts/test-backend.sh --html
-# Opens backend/coverage.html
 ```
 
 What it runs:
@@ -74,19 +57,66 @@ What it runs:
 ./scripts/test-watch.sh all
 ```
 
-Monitors for file changes and re-runs the relevant test suite automatically. Uses `inotifywait` if available, otherwise falls back to 2-second polling.
+Monitors for file changes and re-runs the relevant test suite automatically.
 
 ## Backend Tests
 
-Located in `backend/handlers/handlers_test.go`.
+### Unit tests — `handlers_test.go`
 
 | Test | Endpoint | Verifies |
 |---|---|---|
 | `TestHealth` | `GET /health` | 200 status, `{"status":"ok"}`, JSON Content-Type |
-| `TestSubmit` | `POST /api/submit` | 501 status, non-empty placeholder message |
-| `TestVerify/valid_cid` | `GET /api/verify/{cid}` | CID path param extraction, 501 with CID in body |
-| `TestVerify/empty_cid` | `GET /api/verify/` | 400 status, error message for missing CID |
-| `TestWriteJSON` | (internal) | Status code, Content-Type header, JSON encoding |
+| `TestVerify/valid_cid` | `GET /api/verify/{cid}` | CID extraction, 501 with CID in body |
+| `TestVerify/empty_cid` | `GET /api/verify/` | 400 with error for missing CID |
+| `TestWriteJSON` | (internal) | Status code, Content-Type, JSON encoding |
+
+### Unit tests — `submit_test.go`
+
+| Test | Verifies |
+|---|---|
+| `TestSubmitFileUpload` | Valid file upload → 200, correct type/name/size/message |
+| `TestSubmitFileUploadMissingField` | Wrong form field name → 400 |
+| `TestSubmitFileUploadEmptyFile` | 0-byte file → 400 |
+| `TestSubmitRepoLink` | Valid GitHub URL → 200, correct type/name/message |
+| `TestSubmitRepoLinkEmpty` | Empty repo string → 400 |
+| `TestSubmitRepoLinkWhitespace` | Whitespace-only repo → 400 |
+| `TestSubmitRepoLinkInvalidURL/gitlab` | GitLab URL → 400 |
+| `TestSubmitRepoLinkInvalidURL/http` | HTTP (not HTTPS) → 400 |
+| `TestSubmitRepoLinkInvalidURL/bare_string` | Non-URL string → 400 |
+| `TestSubmitInvalidJSON` | Malformed JSON → 400 |
+| `TestSubmitEmptyJSONBody` | Empty `{}` body → 400 |
+| `TestSubmitUnsupportedContentType` | `text/plain` → 415 |
+| `TestSubmitMissingContentType` | No Content-Type header → 400 |
+
+### Integration tests — `integration_test.go`
+
+Tests the full `http.ServeMux` routing — method enforcement, path matching, and end-to-end request flow.
+
+| Test | Verifies |
+|---|---|
+| `TestIntegrationHealthEndpoint/GET_returns_200` | Full mux routing for health |
+| `TestIntegrationHealthEndpoint/POST_not_allowed` | POST method rejected |
+| `TestIntegrationSubmitEndpoint/POST_file_upload_through_mux` | File upload through full mux |
+| `TestIntegrationSubmitEndpoint/POST_repo_link_through_mux` | Repo link through full mux |
+| `TestIntegrationSubmitEndpoint/GET_not_allowed` | GET method rejected |
+| `TestIntegrationVerifyEndpoint/GET_with_valid_CID_through_mux` | CID routing through full mux |
+| `TestIntegrationVerifyEndpoint/POST_not_allowed` | POST method rejected |
+| `TestIntegrationUnknownRoute` | Unknown path returns non-200 |
+
+### Current coverage
+
+```
+handlers.go:8:   Health           100.0%
+handlers.go:12:  Verify           100.0%
+handlers.go:24:  writeJSON        100.0%
+submit.go:23:    Submit           100.0%
+submit.go:44:    handleFileUpload  70.0%
+submit.go:93:    handleRepoLink   100.0%
+main.go:10:      main               0.0%
+total:           (statements)      76.8%
+```
+
+> Handler-only coverage: **87.8%**. The uncovered 12.2% is the `io.ReadAll` failure and oversized file `MaxBytesReader` error paths in `handleFileUpload`, which are difficult to trigger without mocking the reader.
 
 ### Running directly
 
@@ -103,22 +133,14 @@ go test -v ./...
 go test -race ./...
 
 # Single test
-go test -run TestHealth ./handlers/
+go test -run TestSubmitFileUpload ./handlers/
+
+# Only integration tests
+go test -run TestIntegration ./handlers/
 
 # Coverage
 go test -coverprofile=coverage.out ./...
 go tool cover -func=coverage.out
-```
-
-### Current coverage
-
-```
-handlers/handlers.go:8:   Health      100.0%
-handlers/handlers.go:12:  Submit      100.0%
-handlers/handlers.go:18:  Verify      100.0%
-handlers/handlers.go:30:  writeJSON   100.0%
-main.go:10:               main          0.0%
-total:                    (statements)  58.8%
 ```
 
 ## CI Integration
