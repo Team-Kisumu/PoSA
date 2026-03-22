@@ -14,13 +14,16 @@ The Go backend is the central orchestrator of the PoSA pipeline — it receives 
 backend/
 ├── main.go                      # Server entrypoint, middleware chain, route registration
 ├── handlers/
-│   ├── types.go                 # Type definitions, validators (filename, URL, CID)
-│   ├── types_test.go            # Validator unit tests
+│   ├── types.go                 # Type definitions (APIResponse, SubmitResponse, etc.)
+│   ├── types_test.go            # Type serialization tests (envelope, MIME field)
 │   ├── handlers.go              # Health, Verify, respondOK/respondError, writeJSON
 │   ├── handlers_test.go         # Unit tests for Health, Verify, CID validation
 │   ├── submit.go                # Submit handler (file upload + repo link)
-│   ├── submit_test.go           # Unit tests for Submit (security edge cases)
+│   ├── submit_test.go           # Unit tests for Submit (MIME, content scan, security)
 │   └── integration_test.go      # Integration tests (mux routing, middleware, envelope)
+├── validation/
+│   ├── validation.go            # All validators: filename, MIME, content, repo URL, CID
+│   └── validation_test.go       # Validator unit tests (filename, MIME, content, URL, CID)
 ├── middleware/
 │   ├── middleware.go             # SecurityHeaders, RequestID, Recovery
 │   └── middleware_test.go        # Middleware unit tests
@@ -47,15 +50,62 @@ Request → Recovery → RequestID → SecurityHeaders → ServeMux → Handler
 | `RequestID` | Generates unique 16-char hex ID per request (`X-Request-ID` header) |
 | `SecurityHeaders` | Sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy: default-src 'none'`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` |
 
-### Data Validation
+### File Upload Validation Pipeline
 
-All user input is validated through dedicated functions in `types.go`:
+File uploads pass through six validation steps in order. Each step must pass before the next runs:
+
+```mmd
+Size Limit → Filename Validation → Content Read → Empty Check → MIME Sniffing → Content Scan
+```
+
+| Step | Validator | Protects Against |
+|---|---|---|
+| 1. Size limit | `MaxBytesReader` (10MB) | Denial-of-service via large uploads |
+| 2. Filename | `validation.Filename` | Path traversal, null bytes, blocked extensions, special chars |
+| 3. Content read | `io.ReadAll` | — |
+| 4. Empty check | Length check | No-op submissions |
+| 5. MIME sniffing | `validation.ContentType` | Renamed binaries (ELF named `.go`, PNG named `.py`) |
+| 6. Content scan | `validation.Content` | Binary magic bytes, null bytes, shebangs in non-script files |
+
+### Validation Package
+
+All validation logic lives in `backend/validation/` as pure functions:
 
 | Validator | Protects Against |
 |---|---|
-| `ValidateFilename` | Path traversal (`../`), null bytes, backslashes, blocked extensions (`.exe`, `.sh`, `.bat`, `.dll`, etc.), special characters |
-| `ValidateRepoURL` | Non-HTTPS, non-GitHub hosts, missing owner/repo, path traversal in URL, malformed URLs |
-| `ValidateCID` | Injection characters (`;`, `\|`, `<`, `>`, `"`, `'`, `&`), null bytes, slashes, invalid format/length |
+| `Filename` | Path traversal (`../`), null bytes, backslashes, blocked extensions (`.exe`, `.sh`, `.bat`, `.dll`, `.bin`, `.elf`, `.class`, `.jar`, etc.), special characters |
+| `ContentType` | Binary MIME types (images, archives, executables, PDFs). Whitelist: `text/plain`, `text/html`, `text/xml`, `application/json`, `application/xml` |
+| `Content` | ELF/PE/Mach-O/Java class magic bytes, ZIP/gzip/RAR/PDF headers, embedded null bytes (first 8KB), shell shebangs in non-script files |
+| `RepoURL` | Non-HTTPS, non-GitHub hosts, missing owner/repo, path traversal in URL, malformed URLs |
+| `CID` | Injection characters (`;`, `\|`, `<`, `>`, `"`, `'`, `&`), null bytes, slashes, invalid format/length |
+
+### Allowed MIME Types
+
+| MIME Type | Allowed | Reason |
+|---|---|---|
+| `text/plain` | Yes | Source code, markdown, plain text |
+| `text/html` | Yes | HTML files |
+| `text/xml` | Yes | XML, SVG, config files |
+| `application/json` | Yes | JSON config/data files |
+| `application/xml` | Yes | XML variants |
+| `application/octet-stream` | No | Generic binary |
+| `application/zip` | No | Archives |
+| `application/pdf` | No | PDFs |
+| `image/*` | No | Images |
+| `audio/*`, `video/*` | No | Media files |
+
+### Dangerous Binary Headers
+
+| Format | Magic Bytes | Detected By |
+|---|---|---|
+| ELF binary | `\x7fELF` | `validation.Content` |
+| PE executable | `MZ` (`\x4d\x5a`) | `validation.Content` |
+| Mach-O binary | `\xcf\xfa\xed\xfe` | `validation.Content` |
+| Java class | `\xca\xfe\xba\xbe` | `validation.Content` |
+| gzip archive | `\x1f\x8b` | `validation.Content` |
+| ZIP archive | `PK\x03\x04` | `validation.Content` |
+| PDF document | `%PDF` | `validation.Content` |
+| RAR archive | `Rar!\x1a` | `validation.Content` |
 
 ### Input Limits
 
@@ -113,7 +163,7 @@ curl -X POST http://localhost:8080/api/submit -F "file=@main.go"
 ```json
 {
   "success": true,
-  "data": {"type": "file", "name": "main.go", "size": 142, "message": "file received, pending evaluation"}
+  "data": {"type": "file", "name": "main.go", "size": 142, "mime": "text/plain", "message": "file received, pending evaluation"}
 }
 ```
 
@@ -123,6 +173,8 @@ curl -X POST http://localhost:8080/api/submit -F "file=@main.go"
 | `400` | `MISSING_FILE` | Missing `file` form field |
 | `400` | `INVALID_FILENAME` | Path traversal, null bytes, blocked extension |
 | `400` | `EMPTY_FILE` | 0-byte file |
+| `400` | `INVALID_CONTENT_TYPE` | Binary MIME type detected (image, archive, executable) |
+| `400` | `MALICIOUS_CONTENT` | Binary magic bytes, null bytes, or shebang in non-script file |
 | `413` | `FILE_TOO_LARGE` | Exceeds 10MB |
 | `415` | `UNSUPPORTED_MEDIA_TYPE` | Wrong Content-Type |
 
@@ -180,7 +232,7 @@ type Error struct {
 
 // Domain types
 type HealthData     struct { Status string `json:"status"` }
-type SubmitResponse struct { Type string; Name string; Size int64; Message string }
+type SubmitResponse struct { Type string; Name string; Size int64; MIME string; Message string }
 type VerifyResponse struct { CID string; Message string }
 type RepoRequest    struct { Repo string `json:"repo"` }
 ```
@@ -204,20 +256,12 @@ cd backend && go test -race -v ./...
 
 | Package | Coverage |
 |---|---|
-| `handlers` | 94.3% |
+| `handlers` | 93.2% |
+| `validation` | 97.0% |
 | `middleware` | 100% |
-| **Total** | **89.1%** |
-
-### Test Summary
-
-| File | Tests | Covers |
-|---|---|---|
-| `types_test.go` | 31 | Filename, repo URL, CID validators (valid + invalid inputs) |
-| `handlers_test.go` | 7 | Health, Verify (valid CID, empty, injection, too short), writeJSON |
-| `submit_test.go` | 19 | File upload, repo link, path traversal, blocked extensions, unknown fields |
-| `integration_test.go` | 13 | Mux routing, method enforcement, security headers, request ID, response envelope |
-| `middleware_test.go` | 4 | SecurityHeaders, RequestID (uniqueness), Recovery (panic + no-panic) |
+| **Total** | **91.0%** |
 
 ## Next Steps
 
-- **Issue #4:** Add input validation and sanitization middleware
+- **Issue #5:** AI evaluation engine integration
+- **Issue #6:** IPFS/Filecoin storage integration

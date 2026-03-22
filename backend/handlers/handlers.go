@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/Murzuqisah/PoSA/validation"
 )
 
 // Health handles GET /health and returns a simple status check.
@@ -16,7 +18,7 @@ func Health(w http.ResponseWriter, r *http.Request) {
 // result. Currently returns a placeholder until blockchain lookup is implemented.
 func Verify(w http.ResponseWriter, r *http.Request) {
 	cid := r.PathValue("cid")
-	if err := ValidateCID(cid); err != nil {
+	if err := validation.CID(cid); err != nil {
 		respondError(w, http.StatusBadRequest, "INVALID_CID", err.Error())
 		return
 	}
