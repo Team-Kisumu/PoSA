@@ -8,13 +8,14 @@ Each component has its own test suite using the idiomatic testing framework for 
 
 | Component | Framework | Coverage Target | Current |
 |---|---|---|---|
-| Backend handlers (Go) | `testing` + `httptest` | 80%+ | 94.3% |
+| Backend handlers (Go) | `testing` + `httptest` | 80%+ | 93.2% |
+| Backend validation (Go) | `testing` | 95%+ | 97.0% |
 | Backend middleware (Go) | `testing` + `httptest` | 100% | 100% |
 | AI Engine (Python) | `pytest` | 80%+ | — |
 | Frontend (Node) | Jest / Vitest | 70%+ | — |
 | Smart Contracts | Flow Test / cargo test | 100% | — |
 
-Tests are split into **validator tests** (input validation), **unit tests** (isolated handler logic), **integration tests** (full mux routing + middleware), and **middleware tests**.
+Tests are split into **validator tests** (input validation + content filtering), **type tests** (serialization), **unit tests** (isolated handler logic), **integration tests** (full mux routing + middleware), and **middleware tests**.
 
 ## Test Scripts
 
@@ -63,7 +64,26 @@ Monitors for file changes and re-runs the relevant test suite automatically.
 
 ## Backend Tests
 
-### Unit tests — `handlers_test.go`
+### Validation tests — `validation/validation_test.go`
+
+| Test | Cases |
+|---|---|
+| `TestFilename` | 6 valid + 17 invalid (empty, null byte, slashes, traversal, blocked extensions incl. .bin/.elf/.class/.jar, special chars) |
+| `TestContentType` | 10 cases: plain text, HTML, JSON, empty, PNG, JPEG, GIF, ZIP, gzip, PDF |
+| `TestContent` | 18 cases: valid Go/Python/Ruby, empty, ELF, PE, Mach-O, Java class, ZIP, gzip, PDF, RAR, null bytes (embedded + start), shebangs (Go/txt rejected, Python/JS/Perl/Ruby allowed) |
+| `TestRepoURL` | 3 valid + 9 invalid (empty, whitespace, http, gitlab, no repo, traversal, bare string, empty owner) |
+| `TestCID` | 2 valid + 9 invalid (empty, short, injection, null byte, pipe, brackets, quotes, slashes) |
+
+### Type tests — `handlers/types_test.go`
+
+| Test | Verifies |
+|---|---|
+| `TestAPIResponseEnvelopeJSON/success` | `data` present, `error` omitted |
+| `TestAPIResponseEnvelopeJSON/error` | `error` present, `data` omitted |
+| `TestSubmitResponseMIMEField/with_MIME` | `mime` field included when set |
+| `TestSubmitResponseMIMEField/without_MIME` | `mime` field omitted when empty |
+
+### Unit tests — `handlers/handlers_test.go`
 
 | Test | Endpoint | Verifies |
 |---|---|---|
@@ -74,16 +94,22 @@ Monitors for file changes and re-runs the relevant test suite automatically.
 | `TestVerify/cid_too_short` | `GET /api/verify/abc` | 400, format validation |
 | `TestWriteJSON` | (internal) | Typed `APIResponse` envelope encoding |
 
-### Unit tests — `submit_test.go`
+### Unit tests — `handlers/submit_test.go`
 
 | Test | Verifies |
 |---|---|
-| `TestSubmitFileUpload` | Valid file upload, typed `SubmitResponse` |
+| `TestSubmitFileUpload` | Valid file upload, typed `SubmitResponse` with MIME field |
 | `TestSubmitFileUploadMissingField` | Wrong field name, `MISSING_FILE` |
 | `TestSubmitFileUploadEmptyFile` | 0-byte file, `EMPTY_FILE` |
 | `TestSubmitFileUploadPathTraversal/backslash` | Backslash traversal, `INVALID_FILENAME` |
 | `TestSubmitFileUploadPathTraversal/dot_dot_slash` | `filepath.Base` sanitizes traversal |
 | `TestSubmitFileUploadBlockedExtension` | `.exe`, `.bat`, `.sh`, `.ps1`, `.dll`, `.cmd` blocked |
+| `TestSubmitFileUploadBinaryContent/PNG` | PNG disguised as `.go` rejected |
+| `TestSubmitFileUploadBinaryContent/JPEG` | JPEG disguised as `.py` rejected |
+| `TestSubmitFileUploadBinaryContent/ZIP` | ZIP disguised as `.txt` rejected |
+| `TestSubmitFileUploadMaliciousContent/null_bytes` | Null bytes in source code rejected |
+| `TestSubmitFileUploadMaliciousContent/shebang_go` | Shell shebang in `.go` file rejected |
+| `TestSubmitFileUploadMaliciousContent/shebang_python` | Python shebang allowed |
 | `TestSubmitRepoLink` | Valid GitHub URL, 200 |
 | `TestSubmitRepoLinkEmpty` | Empty repo, `INVALID_REPO` |
 | `TestSubmitRepoLinkWhitespace` | Whitespace-only, `INVALID_REPO` |
@@ -94,7 +120,7 @@ Monitors for file changes and re-runs the relevant test suite automatically.
 | `TestSubmitUnsupportedContentType` | `text/plain`, 415 |
 | `TestSubmitMissingContentType` | No header, 400 |
 
-### Integration tests — `integration_test.go`
+### Integration tests — `handlers/integration_test.go`
 
 Tests the full `http.ServeMux` routing with middleware chain.
 
@@ -113,15 +139,7 @@ Tests the full `http.ServeMux` routing with middleware chain.
 | `TestIntegrationResponseEnvelope/success` | `success` + `data` fields |
 | `TestIntegrationResponseEnvelope/error` | `success` + `error` fields |
 
-### Validator tests — `types_test.go`
-
-| Test | Cases |
-|---|---|
-| `TestValidateFilename` | 6 valid + 13 invalid (empty, null byte, slashes, traversal, blocked extensions, special chars) |
-| `TestValidateRepoURL` | 3 valid + 9 invalid (empty, http, gitlab, no repo, traversal, bare string) |
-| `TestValidateCID` | 2 valid + 9 invalid (empty, short, injection, null byte, pipe, brackets, quotes, slashes) |
-
-### Middleware tests — `middleware_test.go`
+### Middleware tests — `middleware/middleware_test.go`
 
 | Test | Verifies |
 |---|---|
@@ -133,23 +151,26 @@ Tests the full `http.ServeMux` routing with middleware chain.
 ### Current coverage
 
 ```md
-handlers.go:8:    Health           100.0%
-handlers.go:12:   Verify           100.0%
-handlers.go:24:   respondOK        100.0%
-handlers.go:28:   respondError     100.0%
-handlers.go:32:   writeJSON        100.0%
-submit.go:11:     Submit           100.0%
-submit.go:29:     handleFileUpload  81.0%
-submit.go:69:     handleRepoLink   100.0%
-types.go:63:      ValidateFilename  92.3%
-types.go:84:      ValidateRepoURL  100.0%
-types.go:109:     ValidateCID      100.0%
-middleware.go:10: SecurityHeaders  100.0%
-middleware.go:22: RequestID        100.0%
-middleware.go:30: Recovery         100.0%
-middleware.go:44: generateID       100.0%
-main.go:11:       main               0.0%
-total:            (statements)      89.1%
+handlers/handlers.go:    Health            100.0%
+handlers/handlers.go:    Verify            100.0%
+handlers/handlers.go:    respondOK         100.0%
+handlers/handlers.go:    respondError      100.0%
+handlers/handlers.go:    writeJSON         100.0%
+handlers/submit.go:      Submit            100.0%
+handlers/submit.go:      handleFileUpload   85.7%
+handlers/submit.go:      handleRepoLink    100.0%
+validation/validation.go: Filename          92.3%
+validation/validation.go: ContentType      100.0%
+validation/validation.go: Content           94.1%
+validation/validation.go: matchPrefix      100.0%
+validation/validation.go: RepoURL          100.0%
+validation/validation.go: CID              100.0%
+middleware/middleware.go: SecurityHeaders   100.0%
+middleware/middleware.go: RequestID         100.0%
+middleware/middleware.go: Recovery          100.0%
+middleware/middleware.go: generateID        100.0%
+main.go:                 main                0.0%
+total:                   (statements)       91.0%
 ```
 
 ### Running directly
@@ -172,8 +193,8 @@ go test -run TestSubmitFileUpload ./handlers/
 # Only integration tests
 go test -run TestIntegration ./handlers/
 
-# Only validator tests
-go test -run TestValidate ./handlers/
+# Only validation tests
+go test -v ./validation/
 
 # Only middleware tests
 go test -v ./middleware/
