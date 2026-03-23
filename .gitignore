@@ -38,6 +38,12 @@ PoSA_*
 posa-backend
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+.venv/
+*.venv/
+venv/
+.pytest_cache/
 node_modules/
 .next/
 PR.txt
