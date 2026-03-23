@@ -1,8 +1,8 @@
 # AI Engine
 
-> **Status:** Scaffold implemented (Phase 2)
+> **Status:** Code quality analysis implemented (Phase 2)
 
-The AI engine evaluates user-submitted work — code, writing, and tasks — and produces structured evaluation reports with scores, issues, and suggestions.
+The AI engine evaluates user-submitted code using pattern-based static analysis to detect security vulnerabilities, code quality issues, and style problems. Supports Go, Python, and JavaScript.
 
 ## Technology
 
@@ -18,17 +18,71 @@ The AI engine evaluates user-submitted work — code, writing, and tasks — and
 ai/
 ├── __init__.py              # Package marker
 ├── evaluator.py             # FastAPI app with health and evaluation endpoints
+├── analyzer.py              # Core analysis engine (language detection, scanning, scoring)
 ├── requirements.txt         # Pinned Python dependencies
+├── rules/
+│   ├── __init__.py          # Package marker
+│   └── patterns.py          # Language-specific rule definitions (Go, Python, JS)
 └── tests/
     ├── __init__.py          # Package marker
-    └── test_evaluator.py    # Endpoint tests (13 test cases)
+    ├── test_analyzer.py     # Analyzer unit tests (46 test cases)
+    └── test_evaluator.py    # Endpoint integration tests (19 test cases)
 ```
+
+## Analysis Architecture
+
+### Pipeline
+
+```mmd
+File Upload → Language Detection → Rule Matching → Scoring → Response
+```
+
+1. **Language detection** — File extension mapped to language (`EXTENSION_MAP`)
+2. **Rule matching** — Source code scanned line-by-line against language-specific regex patterns
+3. **Deduplication** — Same issue on the same line reported only once
+4. **Scoring** — Each issue deducts points based on severity (high=15, medium=8, low=3)
+5. **Suggestions** — Grouped by issue category (security, quality, style)
+
+### Supported Languages
+
+| Language | Extensions | Rules |
+|---|---|---|
+| Go | `.go` | 10 rules (5 security, 5 quality) |
+| Python | `.py` | 11 rules (7 security, 3 quality, 1 style) |
+| JavaScript | `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs` | 11 rules (6 security, 3 quality, 2 style) |
+
+### Scoring System
+
+| Severity | Point Deduction | Examples |
+|---|---|---|
+| High (-15) | Security vulnerabilities | eval(), exec.Command, SQL injection, innerHTML, pickle |
+| Medium (-8) | Quality concerns | panic(), bare except, discarded errors, shell=True |
+| Low (-3) | Style issues | fmt.Println, console.log, var, TODO comments |
+
+Score = max(0, 100 - sum of deductions). Clean code scores 100.
+
+### Security Rules
+
+| Language | Pattern | Severity |
+|---|---|---|
+| Go | `exec.Command()` | High |
+| Go | SQL query with string concatenation | High |
+| Go | Unsanitized request data in response | High |
+| Go | `http.ListenAndServe` with nil handler | Medium |
+| Python | `eval()`, `exec()` | High |
+| Python | `os.system()` | High |
+| Python | `subprocess` with `shell=True` | High |
+| Python | `pickle.load/loads` | High |
+| Python | `yaml.load` without safe Loader | High |
+| JavaScript | `eval()`, `new Function()` | High |
+| JavaScript | `innerHTML` assignment | High |
+| JavaScript | `document.write()` | High |
+| JavaScript | `child_process` usage | High |
+| JavaScript | `setTimeout` with string argument | Medium |
 
 ## API Reference
 
 ### `GET /health`
-
-Health check endpoint for monitoring and load balancer probes.
 
 **Response:** `200 OK`
 
@@ -38,45 +92,34 @@ Health check endpoint for monitoring and load balancer probes.
 
 ### `POST /evaluate`
 
-Receives a submission payload from the Go backend and returns an evaluation result.
-
 **Request:**
 
 ```json
 {
   "submission_type": "file",
   "name": "main.go",
-  "content": "package main\n\nfunc main() {}\n",
+  "content": "package main\n\nimport \"os/exec\"\n\nfunc run(cmd string) {\n\texec.Command(cmd)\n}\n",
   "mime": "text/plain"
 }
 ```
-
-| Field | Type | Required | Constraints |
-|---|---|---|---|
-| `submission_type` | string | Yes | Must be `"file"` or `"repo"` |
-| `name` | string | Yes | 1-500 characters |
-| `content` | string | No | File content (required non-empty for file submissions) |
-| `mime` | string | No | Detected MIME type from backend |
 
 **Response:** `200 OK`
 
 ```json
 {
-  "score": 82,
+  "score": 85,
   "issues": [
-    {"issue_type": "security", "message": "Unvalidated user input at line 45", "line": 45}
+    {
+      "issue_type": "security",
+      "message": "Use of exec.Command — verify input is sanitized to prevent command injection",
+      "line": 6
+    }
   ],
   "suggestions": [
-    "Add input sanitization before DB query"
+    "Security issues detected — review and fix before deployment"
   ]
 }
 ```
-
-| Field | Type | Description |
-|---|---|---|
-| `score` | int | 0-100 evaluation score |
-| `issues` | list | Found issues with type, message, and optional line number |
-| `suggestions` | list | Improvement suggestions |
 
 **Error responses:**
 
@@ -85,30 +128,9 @@ Receives a submission payload from the Go backend and returns an evaluation resu
 | `400` | File submission with empty content |
 | `422` | Invalid submission_type, missing required fields, name too long, malformed JSON |
 
-## Data Models
-
-```python
-class EvaluationRequest(BaseModel):
-    submission_type: str  # "file" or "repo"
-    name: str             # filename or repo URL (1-500 chars)
-    content: str          # file content (empty for repo)
-    mime: str             # detected MIME type
-
-class Issue(BaseModel):
-    issue_type: str       # "security", "quality", "logic", "style"
-    message: str
-    line: int | None      # line number, if applicable
-
-class EvaluationResponse(BaseModel):
-    score: int            # 0-100
-    issues: list[Issue]
-    suggestions: list[str]
-```
-
 ## Running
 
 ```bash
-# Set up virtual environment
 cd ai
 python3 -m venv .venv
 source .venv/bin/activate
@@ -118,16 +140,10 @@ pip install -r requirements.txt
 python evaluator.py
 # -> Uvicorn running on http://0.0.0.0:8000
 
-# Or with uvicorn directly (auto-reload for development)
-uvicorn ai.evaluator:app --reload --port 8000
+# Interactive docs
+# Swagger UI: http://localhost:8000/docs
+# ReDoc: http://localhost:8000/redoc
 ```
-
-### Interactive API Docs
-
-FastAPI auto-generates interactive documentation:
-
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
 
 ## Testing
 
@@ -135,40 +151,19 @@ FastAPI auto-generates interactive documentation:
 # From project root (with venv activated)
 PYTHONPATH=. pytest ai/tests/ -v
 
-# Or via the test script
-./scripts/test.sh
+# 65 tests, ~0.8s
 ```
 
-### Test Cases
+### Test Summary
 
-| Test | Verifies |
-|---|---|
-| `test_health` | 200 with `{"status": "ok"}` |
-| `test_health_post_not_allowed` | POST to /health returns 405 |
-| `test_evaluate_file_submission` | Valid file payload returns score + structure |
-| `test_evaluate_repo_submission` | Valid repo payload accepted (empty content ok) |
-| `test_evaluate_file_empty_content` | Empty content for file type returns 400 |
-| `test_evaluate_file_whitespace_content` | Whitespace-only content returns 400 |
-| `test_evaluate_invalid_submission_type` | Invalid type returns 422 |
-| `test_evaluate_missing_required_fields` | Empty body returns 422 |
-| `test_evaluate_missing_name` | Missing name returns 422 |
-| `test_evaluate_name_too_long` | Name > 500 chars returns 422 |
-| `test_evaluate_empty_body` | Empty request body returns 422 |
-| `test_evaluate_invalid_json` | Malformed JSON returns 422 |
-| `test_evaluate_response_structure` | Response has exactly score, issues, suggestions |
-
-## Integration with Backend
-
-The Go backend calls the AI engine via HTTP after receiving a user submission:
-
-```mmd
-User → Go Backend → AI Engine → Evaluation Result → IPFS → Blockchain
-```
-
-The backend will POST to `http://localhost:8000/evaluate` with the submission payload. The AI engine returns the evaluation, which the backend then stores on IPFS and anchors on-chain.
+| File | Tests | Covers |
+|---|---|---|
+| `test_analyzer.py` | 46 | Language detection (8), Go rules (7), Python rules (10), JS rules (10), scoring (4), suggestions (3), edge cases (4) |
+| `test_evaluator.py` | 19 | Health (2), endpoint integration with analyzer (7), validation (8), response structure (2) |
+| **Total** | **65** | |
 
 ## Next Steps
 
-- **Issue #8:** Implement code quality analysis (static analysis, bug detection)
-- **Issue #9:** Implement writing evaluation module
+- **Issue #9:** Writing evaluation module
 - **Issue #10:** Scoring system with detailed explanations
+- Future: LLM-based analysis for deeper semantic understanding

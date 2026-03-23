@@ -2,17 +2,20 @@
 PoSA AI Evaluation Engine.
 
 FastAPI server that receives code/text submissions from the Go backend
-and returns evaluation results (score, issues, suggestions). This is the
-scaffold — actual AI analysis will be integrated in subsequent issues.
+and returns evaluation results (score, issues, suggestions). Uses
+pattern-based static analysis to detect security vulnerabilities,
+code quality issues, and style problems in Go, Python, and JavaScript.
 """
 
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 
+from ai.analyzer import analyze
+
 app = FastAPI(
     title="PoSA AI Engine",
     description="AI evaluation engine for Proof-of-Skill submissions",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 
@@ -66,11 +69,13 @@ def evaluate(req: EvaluationRequest):
     """
     Evaluate a code/text submission.
 
-    Receives the submission payload from the Go backend, runs analysis,
-    and returns a score (0-100), list of issues, and suggestions.
+    Receives the submission payload from the Go backend, runs static
+    analysis for security vulnerabilities, code quality, and style
+    issues, and returns a score (0-100) with detailed findings.
 
-    Currently returns a placeholder response. Actual AI analysis
-    (code quality, security, logic) will be integrated in Issue #8.
+    Supported languages: Go (.go), Python (.py), JavaScript (.js/.ts).
+    Unsupported file types receive a score of 0 with a suggestion
+    to submit a supported language.
     """
     # Reject empty content for file submissions — the backend should
     # have caught this, but defense-in-depth.
@@ -80,12 +85,34 @@ def evaluate(req: EvaluationRequest):
             detail="file submission requires non-empty content",
         )
 
-    # Placeholder evaluation — returns a fixed score with no issues.
-    # This will be replaced with actual AI analysis in Phase 2.
+    # Repo submissions are not yet supported for analysis.
+    # Return a placeholder until repo fetching is implemented.
+    if req.submission_type == "repo":
+        return EvaluationResponse(
+            score=0,
+            issues=[],
+            suggestions=["Repo analysis not yet implemented — submit file content directly"],
+        )
+
+    # Run static analysis on the submitted code.
+    result = analyze(req.content, req.name)
+
+    # Convert analyzer output to response model format.
+    # The analyzer returns severity in issues (used for scoring) but
+    # the API response model doesn't include it — strip before returning.
+    issues = [
+        Issue(
+            issue_type=i["issue_type"],
+            message=i["message"],
+            line=i.get("line"),
+        )
+        for i in result["issues"]
+    ]
+
     return EvaluationResponse(
-        score=0,
-        issues=[],
-        suggestions=["AI evaluation not yet implemented"],
+        score=result["score"],
+        issues=issues,
+        suggestions=result["suggestions"],
     )
 
 
