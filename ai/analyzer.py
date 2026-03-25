@@ -135,19 +135,13 @@ def _generate_suggestions(issues: list[dict], language: str) -> list[str]:
     issue_types = {i["issue_type"] for i in issues}
 
     if "security" in issue_types:
-        suggestions.append(
-            "Security issues detected — review and fix before deployment"
-        )
+        suggestions.append("Security issues detected — review and fix before deployment")
 
     if "quality" in issue_types:
-        suggestions.append(
-            "Code quality issues found — consider refactoring for maintainability"
-        )
+        suggestions.append("Code quality issues found — consider refactoring for maintainability")
 
     if "style" in issue_types:
-        suggestions.append(
-            "Style issues found — apply consistent formatting and remove debug statements"
-        )
+        suggestions.append("Style issues found — apply consistent formatting and remove debug statements")
 
     if not issues:
         suggestions.append("No issues detected — code looks clean")

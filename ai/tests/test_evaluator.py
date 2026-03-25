@@ -207,17 +207,13 @@ def test_evaluate_name_too_long(client):
 
 def test_evaluate_empty_body(client):
     """Empty request body is rejected."""
-    resp = client.post(
-        "/evaluate", content=b"", headers={"Content-Type": "application/json"}
-    )
+    resp = client.post("/evaluate", content=b"", headers={"Content-Type": "application/json"})
     assert resp.status_code == 422
 
 
 def test_evaluate_invalid_json(client):
     """Malformed JSON is rejected."""
-    resp = client.post(
-        "/evaluate", content=b"{bad json", headers={"Content-Type": "application/json"}
-    )
+    resp = client.post("/evaluate", content=b"{bad json", headers={"Content-Type": "application/json"})
     assert resp.status_code == 422
 
 

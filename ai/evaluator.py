@@ -91,9 +91,7 @@ def evaluate(req: EvaluationRequest):
         return EvaluationResponse(
             score=0,
             issues=[],
-            suggestions=[
-                "Repo analysis not yet implemented — submit file content directly"
-            ],
+            suggestions=["Repo analysis not yet implemented — submit file content directly"],
         )
 
     # Run static analysis on the submitted code.
