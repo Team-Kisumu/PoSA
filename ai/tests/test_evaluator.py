@@ -59,8 +59,8 @@ def test_evaluate_clean_go_code(client):
     """Clean Go code should score 100 through the endpoint."""
     code = (
         'package main\n\nimport "net/http"\n\n'
-        'func handler(w http.ResponseWriter, r *http.Request)'
-        ' {\n\tw.WriteHeader(http.StatusOK)\n}\n'
+        "func handler(w http.ResponseWriter, r *http.Request)"
+        " {\n\tw.WriteHeader(http.StatusOK)\n}\n"
     )
     payload = {
         "submission_type": "file",
@@ -207,13 +207,17 @@ def test_evaluate_name_too_long(client):
 
 def test_evaluate_empty_body(client):
     """Empty request body is rejected."""
-    resp = client.post("/evaluate", content=b"", headers={"Content-Type": "application/json"})
+    resp = client.post(
+        "/evaluate", content=b"", headers={"Content-Type": "application/json"}
+    )
     assert resp.status_code == 422
 
 
 def test_evaluate_invalid_json(client):
     """Malformed JSON is rejected."""
-    resp = client.post("/evaluate", content=b"{bad json", headers={"Content-Type": "application/json"})
+    resp = client.post(
+        "/evaluate", content=b"{bad json", headers={"Content-Type": "application/json"}
+    )
     assert resp.status_code == 422
 
 

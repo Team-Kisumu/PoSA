@@ -42,7 +42,9 @@ SUPPORTED_LANGUAGES = set(EXTENSION_MAP.values())
 GO_RULES = [
     # Security
     {
-        "pattern": re.compile(r'fmt\.Sprintf\s*\(\s*"[^"]*%s[^"]*"\s*,.*\bRequest\b', re.IGNORECASE),
+        "pattern": re.compile(
+            r'fmt\.Sprintf\s*\(\s*"[^"]*%s[^"]*"\s*,.*\bRequest\b', re.IGNORECASE
+        ),
         "issue_type": "security",
         "severity": "high",
         "message": "Potential format string injection — user input in fmt.Sprintf",
