@@ -57,10 +57,15 @@ def test_evaluate_file_submission(client):
 
 def test_evaluate_clean_go_code(client):
     """Clean Go code should score 100 through the endpoint."""
+    code = (
+        'package main\n\nimport "net/http"\n\n'
+        'func handler(w http.ResponseWriter, r *http.Request)'
+        ' {\n\tw.WriteHeader(http.StatusOK)\n}\n'
+    )
     payload = {
         "submission_type": "file",
         "name": "handler.go",
-        "content": 'package main\n\nimport "net/http"\n\nfunc handler(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(http.StatusOK)\n}\n',
+        "content": code,
         "mime": "text/plain",
     }
     resp = client.post("/evaluate", json=payload)
