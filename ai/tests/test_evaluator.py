@@ -1,8 +1,9 @@
 """
-Tests for the PoSA AI evaluation engine.
+Tests for the PoSA AI evaluation engine endpoints.
 
 Uses FastAPI's TestClient (backed by httpx) to test endpoints
-without starting a real server.
+without starting a real server. Tests cover the full pipeline:
+request validation, analyzer integration, and response format.
 """
 
 import pytest
@@ -54,8 +55,83 @@ def test_evaluate_file_submission(client):
     assert isinstance(data["suggestions"], list)
 
 
+def test_evaluate_clean_go_code(client):
+    """Clean Go code should score 100 through the endpoint."""
+    code = (
+        'package main\n\nimport "net/http"\n\n'
+        "func handler(w http.ResponseWriter, r *http.Request)"
+        " {\n\tw.WriteHeader(http.StatusOK)\n}\n"
+    )
+    payload = {
+        "submission_type": "file",
+        "name": "handler.go",
+        "content": code,
+        "mime": "text/plain",
+    }
+    resp = client.post("/evaluate", json=payload)
+    data = resp.json()
+    assert data["score"] == 100
+    assert data["issues"] == []
+
+
+def test_evaluate_go_with_issues(client):
+    """Go code with security issues should score below 100."""
+    payload = {
+        "submission_type": "file",
+        "name": "bad.go",
+        "content": 'package main\n\nimport "os/exec"\n\nfunc run(cmd string) {\n\texec.Command(cmd)\n}\n',
+        "mime": "text/plain",
+    }
+    resp = client.post("/evaluate", json=payload)
+    data = resp.json()
+    assert data["score"] < 100
+    assert len(data["issues"]) > 0
+    assert any(i["issue_type"] == "security" for i in data["issues"])
+
+
+def test_evaluate_python_with_eval(client):
+    """Python code with eval() should be flagged."""
+    payload = {
+        "submission_type": "file",
+        "name": "compute.py",
+        "content": "def compute(expr):\n    return eval(expr)\n",
+        "mime": "text/plain",
+    }
+    resp = client.post("/evaluate", json=payload)
+    data = resp.json()
+    assert data["score"] < 100
+    assert any("eval()" in i["message"] for i in data["issues"])
+
+
+def test_evaluate_js_with_innerhtml(client):
+    """JavaScript with innerHTML should be flagged as XSS risk."""
+    payload = {
+        "submission_type": "file",
+        "name": "render.js",
+        "content": 'function render(data) {\n    document.getElementById("out").innerHTML = data;\n}\n',
+        "mime": "text/plain",
+    }
+    resp = client.post("/evaluate", json=payload)
+    data = resp.json()
+    assert any("innerHTML" in i["message"] for i in data["issues"])
+
+
+def test_evaluate_unsupported_language(client):
+    """Unsupported file types return score 0 with a suggestion."""
+    payload = {
+        "submission_type": "file",
+        "name": "style.css",
+        "content": "body { color: red; }",
+        "mime": "text/plain",
+    }
+    resp = client.post("/evaluate", json=payload)
+    data = resp.json()
+    assert data["score"] == 0
+    assert any("not supported" in s.lower() for s in data["suggestions"])
+
+
 def test_evaluate_repo_submission(client):
-    """Valid repo submission returns a score (content can be empty)."""
+    """Repo submissions return a placeholder (not yet implemented)."""
     payload = {
         "submission_type": "repo",
         "name": "https://github.com/user/project",
@@ -66,7 +142,8 @@ def test_evaluate_repo_submission(client):
     assert resp.status_code == 200
 
     data = resp.json()
-    assert 0 <= data["score"] <= 100
+    assert data["score"] == 0
+    assert any("not yet implemented" in s.lower() for s in data["suggestions"])
 
 
 def test_evaluate_file_empty_content(client):
@@ -101,7 +178,7 @@ def test_evaluate_invalid_submission_type(client):
         "content": "data",
     }
     resp = client.post("/evaluate", json=payload)
-    assert resp.status_code == 422  # Pydantic validation error
+    assert resp.status_code == 422
 
 
 def test_evaluate_missing_required_fields(client):
@@ -153,8 +230,24 @@ def test_evaluate_response_structure(client):
 
     # Verify all expected keys are present.
     assert set(data.keys()) == {"score", "issues", "suggestions"}
-
-    # Verify types.
     assert isinstance(data["score"], int)
     assert isinstance(data["issues"], list)
     assert isinstance(data["suggestions"], list)
+
+
+def test_evaluate_issue_structure(client):
+    """Issues in the response have the correct structure."""
+    payload = {
+        "submission_type": "file",
+        "name": "bad.py",
+        "content": "eval('x')\n",
+        "mime": "text/plain",
+    }
+    resp = client.post("/evaluate", json=payload)
+    data = resp.json()
+
+    assert len(data["issues"]) > 0
+    issue = data["issues"][0]
+    assert "issue_type" in issue
+    assert "message" in issue
+    assert "line" in issue
