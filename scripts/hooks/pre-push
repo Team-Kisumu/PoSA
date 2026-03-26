@@ -20,7 +20,7 @@ fi
 # --- Python: flake8 lint ---
 if [ -d "ai" ] && command -v flake8 &>/dev/null; then
     echo -e "${YELLOW}Checking Python code...${NC}"
-    (cd ai && flake8 . --max-line-length=120 --exclude=__pycache__) || { echo -e "${RED}✗ flake8 failed${NC}"; ERRORS=1; }
+    (cd ai && flake8 . --max-line-length=120 --exclude=__pycache__,.venv) || { echo -e "${RED}✗ flake8 failed${NC}"; ERRORS=1; }
     [ $ERRORS -eq 0 ] && echo -e "${GREEN}✓ Python checks passed${NC}"
 fi
 
