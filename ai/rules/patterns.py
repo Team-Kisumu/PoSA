@@ -13,6 +13,33 @@ the file extension and applies the corresponding rule set.
 
 import re
 
+from ai.rules.compiled_langs import (
+    C_RULES,
+    CSHARP_RULES,
+    JAVA_RULES,
+    PHP_RULES,
+    RUBY_RULES,
+    RUST_RULES,
+    SHELL_RULES,
+    SWIFT_RULES,
+)
+from ai.rules.other_langs import (
+    CLOJURE_RULES,
+    CONFIG_RULES,
+    CSS_RULES,
+    DART_RULES,
+    ELIXIR_RULES,
+    ERLANG_RULES,
+    HASKELL_RULES,
+    KOTLIN_RULES,
+    LUA_RULES,
+    PERL_RULES,
+    R_RULES,
+    SCALA_RULES,
+    SQL_RULES,
+    TERRAFORM_RULES,
+)
+
 # Severity weights used to calculate the final score.
 # Each matched rule deducts its severity weight from 100.
 SEVERITY_WEIGHT = {
@@ -23,14 +50,110 @@ SEVERITY_WEIGHT = {
 
 # Map file extensions to language identifiers (languages with analysis rules).
 EXTENSION_MAP = {
+    # Go
     ".go": "go",
+    # Python
     ".py": "python",
+    # JavaScript / TypeScript
     ".js": "javascript",
     ".jsx": "javascript",
     ".ts": "javascript",
     ".tsx": "javascript",
     ".mjs": "javascript",
     ".cjs": "javascript",
+    # C / C++
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "c",
+    ".cc": "c",
+    ".cxx": "c",
+    ".hpp": "c",
+    ".hxx": "c",
+    ".hh": "c",
+    # Java
+    ".java": "java",
+    # C#
+    ".cs": "csharp",
+    # Ruby
+    ".rb": "ruby",
+    ".erb": "ruby",
+    ".rake": "ruby",
+    ".gemspec": "ruby",
+    # Rust
+    ".rs": "rust",
+    # PHP
+    ".php": "php",
+    # Swift / Objective-C
+    ".swift": "swift",
+    ".m": "swift",
+    # Shell
+    ".sh": "shell",
+    ".bash": "shell",
+    ".zsh": "shell",
+    ".fish": "shell",
+    # Perl
+    ".pl": "perl",
+    ".pm": "perl",
+    # R
+    ".r": "r",
+    ".R": "r",
+    # Lua
+    ".lua": "lua",
+    # Dart
+    ".dart": "dart",
+    # Elixir
+    ".ex": "elixir",
+    ".exs": "elixir",
+    # Erlang
+    ".erl": "erlang",
+    ".hrl": "erlang",
+    # Haskell
+    ".hs": "haskell",
+    ".lhs": "haskell",
+    # Clojure
+    ".clj": "clojure",
+    ".cljs": "clojure",
+    ".cljc": "clojure",
+    ".edn": "clojure",
+    # Scala
+    ".scala": "scala",
+    ".sc": "scala",
+    # Kotlin
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    # Groovy
+    ".groovy": "kotlin",
+    ".gradle": "kotlin",
+    # SQL
+    ".sql": "sql",
+    # CSS
+    ".css": "css",
+    ".scss": "css",
+    ".sass": "css",
+    ".less": "css",
+    # Config / Data
+    ".json": "config",
+    ".yaml": "config",
+    ".yml": "config",
+    ".toml": "config",
+    ".xml": "config",
+    ".ini": "config",
+    ".cfg": "config",
+    ".conf": "config",
+    ".env": "config",
+    ".properties": "config",
+    ".csv": "config",
+    # Infrastructure
+    ".tf": "terraform",
+    ".hcl": "terraform",
+    ".dockerfile": "terraform",
+    # VB.NET
+    ".vb": "csharp",
+    # F#
+    ".fs": "csharp",
+    ".fsx": "csharp",
+    # Jupyter (treated as config for secret detection)
+    ".ipynb": "config",
 }
 
 # Supported languages for analysis.
@@ -363,4 +486,26 @@ LANGUAGE_RULES = {
     "go": GO_RULES,
     "python": PYTHON_RULES,
     "javascript": JAVASCRIPT_RULES,
+    "c": C_RULES,
+    "java": JAVA_RULES,
+    "csharp": CSHARP_RULES,
+    "ruby": RUBY_RULES,
+    "rust": RUST_RULES,
+    "php": PHP_RULES,
+    "swift": SWIFT_RULES,
+    "shell": SHELL_RULES,
+    "perl": PERL_RULES,
+    "r": R_RULES,
+    "lua": LUA_RULES,
+    "dart": DART_RULES,
+    "elixir": ELIXIR_RULES,
+    "erlang": ERLANG_RULES,
+    "haskell": HASKELL_RULES,
+    "clojure": CLOJURE_RULES,
+    "scala": SCALA_RULES,
+    "kotlin": KOTLIN_RULES,
+    "sql": SQL_RULES,
+    "css": CSS_RULES,
+    "config": CONFIG_RULES,
+    "terraform": TERRAFORM_RULES,
 }

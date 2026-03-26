@@ -256,7 +256,7 @@ def test_analyzer_unsupported_still_works():
     """Truly unsupported files should still return score 0."""
     from ai.analyzer import analyze
 
-    result = analyze("body { color: red; }", "style.css")
+    result = analyze("random content here", "data.xyz")
     assert result["score"] == 0
     assert result["language"] is None
 
