@@ -3,7 +3,7 @@ anyio==4.12.1
 black==26.3.1
 certifi==2026.2.25
 click==8.3.1
-fastapi==0.115.12
+fastapi==0.135.2
 flake8==7.3.0
 h11==0.16.0
 httpcore==1.0.9
@@ -24,7 +24,7 @@ Pygments==2.19.2
 pytest==8.4.1
 pytest-asyncio==1.0.0
 pytokens==0.4.1
-starlette==0.46.2
+starlette==1.0.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
-uvicorn==0.34.3
+uvicorn==0.42.0
