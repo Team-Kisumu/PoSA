@@ -5,7 +5,7 @@ Covers language detection, rule matching for Go/Python/JavaScript,
 scoring calculation, suggestion generation, and edge cases.
 """
 
-from ai.analyzer import analyze, detect_language
+from ai.analyzer import analyze, detect_language, is_known_code_file
 
 # --- Language Detection Tests ---
 
@@ -423,11 +423,74 @@ def test_suggestions_clean():
 
 
 def test_unsupported_language():
-    """Unsupported file types return score 0 with a suggestion."""
-    result = analyze("body { color: red; }", "style.css")
+    """Truly unknown file types return score 0 with 'not supported'."""
+    result = analyze("some random content", "data.xyz")
     assert result["score"] == 0
     assert result["language"] is None
     assert any("not supported" in s.lower() for s in result["suggestions"])
+
+
+def test_known_code_no_rules_c():
+    """C files are recognized as code but have no analysis rules."""
+    result = analyze("#include <stdio.h>\nint main() { return 0; }", "main.c")
+    assert result["score"] == 0
+    assert result["language"] is None
+    assert any("no analysis rules" in s.lower() for s in result["suggestions"])
+
+
+def test_known_code_no_rules_java():
+    """Java files are recognized as code but have no analysis rules."""
+    result = analyze("public class Main {}", "Main.java")
+    assert result["score"] == 0
+    assert any(".java" in s for s in result["suggestions"])
+
+
+def test_known_code_no_rules_rust():
+    """Rust files are recognized as code but have no analysis rules."""
+    result = analyze('fn main() { println!("hello"); }', "main.rs")
+    assert result["score"] == 0
+    assert any("no analysis rules" in s.lower() for s in result["suggestions"])
+
+
+def test_known_code_no_rules_ruby():
+    """Ruby files are recognized as code but have no analysis rules."""
+    result = analyze("puts 'hello'", "script.rb")
+    assert result["score"] == 0
+    assert any("no analysis rules" in s.lower() for s in result["suggestions"])
+
+
+def test_known_code_no_rules_css():
+    """CSS files are recognized as code but have no analysis rules."""
+    result = analyze("body { color: red; }", "style.css")
+    assert result["score"] == 0
+    assert any("no analysis rules" in s.lower() for s in result["suggestions"])
+
+
+def test_known_code_no_rules_sql():
+    """SQL files are recognized as code but have no analysis rules."""
+    result = analyze("SELECT * FROM users;", "query.sql")
+    assert result["score"] == 0
+    assert any("no analysis rules" in s.lower() for s in result["suggestions"])
+
+
+def test_known_code_no_rules_php():
+    """PHP files are recognized as code but have no analysis rules."""
+    result = analyze("<?php echo 'hello'; ?>", "index.php")
+    assert result["score"] == 0
+    assert any("no analysis rules" in s.lower() for s in result["suggestions"])
+
+
+def test_is_known_code_file():
+    """is_known_code_file should recognize common code extensions."""
+    assert is_known_code_file("main.c") is True
+    assert is_known_code_file("App.java") is True
+    assert is_known_code_file("lib.rs") is True
+    assert is_known_code_file("script.rb") is True
+    assert is_known_code_file("style.css") is True
+    assert is_known_code_file("query.sql") is True
+    assert is_known_code_file("main.go") is True  # Also in EXTENSION_MAP
+    assert is_known_code_file("data.xyz") is False
+    assert is_known_code_file("README.md") is False  # Writing, not code
 
 
 def test_empty_content():

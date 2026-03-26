@@ -21,7 +21,7 @@ SEVERITY_WEIGHT = {
     "low": 3,
 }
 
-# Map file extensions to language identifiers.
+# Map file extensions to language identifiers (languages with analysis rules).
 EXTENSION_MAP = {
     ".go": "go",
     ".py": "python",
@@ -35,6 +35,108 @@ EXTENSION_MAP = {
 
 # Supported languages for analysis.
 SUPPORTED_LANGUAGES = set(EXTENSION_MAP.values())
+# Known code file extensions — recognized as code but may not have analysis rules yet.
+# Extensions in EXTENSION_MAP get full rule-based analysis.
+# Extensions only in KNOWN_CODE_EXTENSIONS are recognized as code and receive
+# a "no rules available" response instead of "unsupported file type".
+KNOWN_CODE_EXTENSIONS = {
+    # Languages with analysis rules (also in EXTENSION_MAP)
+    ".go",
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".mjs",
+    ".cjs",
+    # C / C++
+    ".c",
+    ".h",
+    ".cpp",
+    ".cc",
+    ".cxx",
+    ".hpp",
+    ".hxx",
+    ".hh",
+    # Java / JVM
+    ".java",
+    ".kt",
+    ".kts",
+    ".scala",
+    ".sc",
+    ".groovy",
+    ".gradle",
+    # C# / .NET
+    ".cs",
+    ".fs",
+    ".fsx",
+    ".vb",
+    # Ruby
+    ".rb",
+    ".erb",
+    ".rake",
+    ".gemspec",
+    # Rust
+    ".rs",
+    # PHP
+    ".php",
+    # Swift / Objective-C
+    ".swift",
+    ".m",
+    # Shell
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
+    # Perl
+    ".pl",
+    ".pm",
+    # R
+    ".r",
+    ".R",
+    # Lua
+    ".lua",
+    # Dart
+    ".dart",
+    # Elixir / Erlang
+    ".ex",
+    ".exs",
+    ".erl",
+    ".hrl",
+    # Haskell
+    ".hs",
+    ".lhs",
+    # Clojure
+    ".clj",
+    ".cljs",
+    ".cljc",
+    ".edn",
+    # SQL
+    ".sql",
+    # Data / Config (code-adjacent)
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".xml",
+    ".csv",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".env",
+    ".properties",
+    # Infrastructure
+    ".tf",
+    ".hcl",
+    ".dockerfile",
+    # CSS / Styling
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    # Jupyter
+    ".ipynb",
+}
 
 
 # --- Go Rules ---

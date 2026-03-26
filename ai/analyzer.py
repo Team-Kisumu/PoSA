@@ -2,9 +2,10 @@
 Code and writing analyzer for the PoSA AI engine.
 
 Routes submissions to the appropriate evaluator based on file type:
-  - Code files (.go, .py, .js, .ts) -> pattern-based static analysis
+  - Code files with rules (.go, .py, .js, .ts) -> pattern-based static analysis
+  - Code files without rules (.c, .java, .rb, etc.) -> recognized, no analysis yet
   - Writing files (.md, .txt, .rst, .html) -> writing quality evaluation
-  - Unsupported files -> score 0 with suggestion
+  - Unknown files -> score 0 with suggestion
 
 Both evaluators return results on the same 0-100 scale with the same
 structure (score, issues, suggestions) for consistent API responses.
@@ -14,6 +15,7 @@ import os
 
 from ai.rules.patterns import (
     EXTENSION_MAP,
+    KNOWN_CODE_EXTENSIONS,
     LANGUAGE_RULES,
     SEVERITY_WEIGHT,
     SUPPORTED_LANGUAGES,
@@ -30,6 +32,12 @@ def detect_language(filename: str) -> str | None:
     """
     ext = os.path.splitext(filename)[1].lower()
     return EXTENSION_MAP.get(ext)
+
+
+def is_known_code_file(filename: str) -> bool:
+    """Check if a filename is a recognized code file (with or without rules)."""
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in KNOWN_CODE_EXTENSIONS
 
 
 def analyze(content: str, filename: str) -> dict:
@@ -53,7 +61,20 @@ def analyze(content: str, filename: str) -> dict:
     if language is None and is_writing_file(filename):
         return evaluate_writing(content, filename)
 
-    # If neither code nor writing, return unsupported.
+    # Recognized code file but no analysis rules available yet.
+    if language is None and is_known_code_file(filename):
+        ext = os.path.splitext(filename)[1].lower()
+        return {
+            "score": 0,
+            "issues": [],
+            "suggestions": [
+                f"File recognized as code ({ext}) but no analysis rules available yet. "
+                f"Languages with rules: Go, Python, JavaScript/TypeScript."
+            ],
+            "language": None,
+        }
+
+    # Truly unknown file type.
     if language is None or language not in SUPPORTED_LANGUAGES:
         return {
             "score": 0,
