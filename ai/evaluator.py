@@ -2,9 +2,9 @@
 PoSA AI Evaluation Engine.
 
 FastAPI server that receives code/text submissions from the Go backend
-and returns evaluation results (score, issues, suggestions). Uses
-pattern-based static analysis to detect security vulnerabilities,
-code quality issues, and style problems in Go, Python, and JavaScript.
+and returns evaluation results (score, issues, suggestions). Supports:
+  - Code analysis: Go, Python, JavaScript (pattern-based static analysis)
+  - Writing evaluation: Markdown, text, RST, HTML (quality and readability)
 """
 
 from fastapi import FastAPI, HTTPException, status
@@ -67,15 +67,14 @@ def health():
 )
 def evaluate(req: EvaluationRequest):
     """
-    Evaluate a code/text submission.
+    Evaluate a code or writing submission.
 
-    Receives the submission payload from the Go backend, runs static
-    analysis for security vulnerabilities, code quality, and style
-    issues, and returns a score (0-100) with detailed findings.
-
-    Supported languages: Go (.go), Python (.py), JavaScript (.js/.ts).
-    Unsupported file types receive a score of 0 with a suggestion
-    to submit a supported language.
+    Routes to the appropriate evaluator based on file type:
+    - Code files (.go, .py, .js/.ts): static analysis for security,
+      quality, and style issues.
+    - Writing files (.md, .txt, .rst, .html): quality, structure,
+      and readability evaluation.
+    - Unsupported types: score 0 with suggestion.
     """
     # Reject empty content for file submissions — the backend should
     # have caught this, but defense-in-depth.

@@ -1,13 +1,13 @@
 """
-Code quality analyzer for the PoSA AI engine.
+Code and writing analyzer for the PoSA AI engine.
 
-Performs pattern-based static analysis on source code to detect security
-vulnerabilities, quality issues, and style problems. Supports Go, Python,
-and JavaScript. Returns a score (0-100), list of issues, and suggestions.
+Routes submissions to the appropriate evaluator based on file type:
+  - Code files (.go, .py, .js, .ts) -> pattern-based static analysis
+  - Writing files (.md, .txt, .rst, .html) -> writing quality evaluation
+  - Unsupported files -> score 0 with suggestion
 
-The analyzer detects the language from the file extension, applies the
-corresponding rule set line-by-line, deduplicates findings, and computes
-a weighted score based on issue severity.
+Both evaluators return results on the same 0-100 scale with the same
+structure (score, issues, suggestions) for consistent API responses.
 """
 
 import os
@@ -18,6 +18,7 @@ from ai.rules.patterns import (
     SEVERITY_WEIGHT,
     SUPPORTED_LANGUAGES,
 )
+from ai.writing import evaluate_writing, is_writing_file
 
 
 def detect_language(filename: str) -> str | None:
@@ -48,15 +49,18 @@ def analyze(content: str, filename: str) -> dict:
     """
     language = detect_language(filename)
 
-    # If the language is not supported, return a neutral result
-    # with a suggestion to submit a supported file type.
+    # Route writing files to the writing evaluator.
+    if language is None and is_writing_file(filename):
+        return evaluate_writing(content, filename)
+
+    # If neither code nor writing, return unsupported.
     if language is None or language not in SUPPORTED_LANGUAGES:
         return {
             "score": 0,
             "issues": [],
             "suggestions": [
-                f"Language not supported for analysis (file: {filename}). "
-                f"Supported: Go (.go), Python (.py), JavaScript (.js/.ts)."
+                f"File type not supported for analysis (file: {filename}). "
+                f"Supported: Go, Python, JavaScript, Markdown, text, RST, HTML."
             ],
             "language": None,
         }

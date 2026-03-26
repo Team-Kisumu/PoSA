@@ -1,8 +1,10 @@
 # AI Engine
 
-> **Status:** Code quality analysis implemented (Phase 2)
+> **Status:** Code and writing analysis implemented (Phase 2)
 
-The AI engine evaluates user-submitted code using pattern-based static analysis to detect security vulnerabilities, code quality issues, and style problems. Supports Go, Python, and JavaScript.
+The AI engine evaluates user-submitted work using two evaluators:
+- **Code analysis:** Pattern-based static analysis for Go, Python, and JavaScript
+- **Writing evaluation:** Quality, structure, and readability scoring for text documents
 
 ## Technology
 
@@ -18,14 +20,16 @@ The AI engine evaluates user-submitted code using pattern-based static analysis 
 ai/
 ├── __init__.py              # Package marker
 ├── evaluator.py             # FastAPI app with health and evaluation endpoints
-├── analyzer.py              # Core analysis engine (language detection, scanning, scoring)
-├── requirements.txt         # Pinned Python dependencies
+├── analyzer.py              # Router: detects file type, delegates to code or writing evaluator
+├── writing.py               # Writing quality evaluator (structure, readability, style)
+├── requirements.txt         # Direct Python dependencies
 ├── rules/
 │   ├── __init__.py          # Package marker
-│   └── patterns.py          # Language-specific rule definitions (Go, Python, JS)
+│   └── patterns.py          # Language-specific code analysis rules (Go, Python, JS)
 └── tests/
     ├── __init__.py          # Package marker
-    ├── test_analyzer.py     # Analyzer unit tests (46 test cases)
+    ├── test_analyzer.py     # Code analyzer unit tests (46 test cases)
+    ├── test_writing.py      # Writing evaluator unit tests (29 test cases)
     └── test_evaluator.py    # Endpoint integration tests (19 test cases)
 ```
 
@@ -34,8 +38,13 @@ ai/
 ### Pipeline
 
 ```mmd
-File Upload → Language Detection → Rule Matching → Scoring → Response
+File Upload → File Type Detection → Code Analyzer / Writing Evaluator → Scoring → Response
 ```
+
+The analyzer routes submissions based on file extension:
+- Code extensions (.go, .py, .js, .ts) -> code analysis rules
+- Writing extensions (.md, .txt, .rst, .html, .tex) -> writing quality checks
+- Unknown extensions -> score 0 with suggestion
 
 1. **Language detection** — File extension mapped to language (`EXTENSION_MAP`)
 2. **Rule matching** — Source code scanned line-by-line against language-specific regex patterns
@@ -50,6 +59,7 @@ File Upload → Language Detection → Rule Matching → Scoring → Response
 | Go | `.go` | 10 rules (5 security, 5 quality) |
 | Python | `.py` | 11 rules (7 security, 3 quality, 1 style) |
 | JavaScript | `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs` | 11 rules (6 security, 3 quality, 2 style) |
+| Text/Writing | `.md`, `.txt`, `.rst`, `.html`, `.tex`, `.adoc` | 6 checks (length, structure, sentences, passive voice, weasel words, repetition) |
 
 ### Scoring System
 
@@ -159,11 +169,11 @@ PYTHONPATH=. pytest ai/tests/ -v
 | File | Tests | Covers |
 |---|---|---|
 | `test_analyzer.py` | 46 | Language detection (8), Go rules (7), Python rules (10), JS rules (10), scoring (4), suggestions (3), edge cases (4) |
+| `test_writing.py` | 29 | File type detection (8), quality scoring (4), structure (4), passive voice (2), weasel words (2), sentence length (1), suggestions (3), analyzer routing (3), edge cases (2) |
 | `test_evaluator.py` | 19 | Health (2), endpoint integration with analyzer (7), validation (8), response structure (2) |
-| **Total** | **65** | |
+| **Total** | **94** | |
 
 ## Next Steps
 
-- **Issue #9:** Writing evaluation module
-- **Issue #10:** Scoring system with detailed explanations
 - Future: LLM-based analysis for deeper semantic understanding
+- Future: Plagiarism detection for writing submissions
