@@ -168,6 +168,21 @@ def _generate_suggestions(issues: list[dict], language: str) -> list[str]:
     if "style" in issue_types:
         suggestions.append("Style issues found — apply consistent formatting and remove debug statements")
 
+    if "formatting" in issue_types:
+        suggestions.append("Formatting issues found — apply auto-formatter (gofmt, black, prettier)")
+
+    if "incompleteness" in issue_types:
+        suggestions.append("Incomplete code detected — finish implementations before shipping")
+
+    if "logic" in issue_types:
+        suggestions.append("Potential logic errors found — review carefully for bugs")
+
+    if "deprecated" in issue_types:
+        suggestions.append("Deprecated APIs detected — migrate to modern alternatives")
+
+    if "obsolete" in issue_types:
+        suggestions.append("Obsolete patterns found — update to current practices")
+
     if not issues:
         suggestions.append("No issues detected — code looks clean")
 

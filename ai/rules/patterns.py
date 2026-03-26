@@ -39,6 +39,18 @@ from ai.rules.other_langs import (
     SQL_RULES,
     TERRAFORM_RULES,
 )
+from ai.rules.quality_rules import (
+    DEPRECATED_RULES,
+    FORMATTING_RULES,
+    INCOMPLETENESS_RULES,
+    OBSOLETE_RULES,
+    WRONG_CODE_RULES,
+)
+
+# Cross-language rules applied to every code file.
+# These detect formatting issues, incomplete code, logic errors,
+# deprecated APIs, and obsolete patterns regardless of language.
+CROSS_LANGUAGE_RULES = FORMATTING_RULES + INCOMPLETENESS_RULES + WRONG_CODE_RULES + DEPRECATED_RULES + OBSOLETE_RULES
 
 # Severity weights used to calculate the final score.
 # Each matched rule deducts its severity weight from 100.
@@ -482,7 +494,8 @@ JAVASCRIPT_RULES = [
 ]
 
 # Map language identifiers to their rule sets.
-LANGUAGE_RULES = {
+# Each language gets its own rules plus the cross-language rules.
+_BASE_RULES = {
     "go": GO_RULES,
     "python": PYTHON_RULES,
     "javascript": JAVASCRIPT_RULES,
@@ -509,3 +522,5 @@ LANGUAGE_RULES = {
     "config": CONFIG_RULES,
     "terraform": TERRAFORM_RULES,
 }
+
+LANGUAGE_RULES = {lang: rules + CROSS_LANGUAGE_RULES for lang, rules in _BASE_RULES.items()}
