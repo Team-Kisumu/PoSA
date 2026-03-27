@@ -1,23 +1,26 @@
 """
-Code quality analyzer for the PoSA AI engine.
+Code and writing analyzer for the PoSA AI engine.
 
-Performs pattern-based static analysis on source code to detect security
-vulnerabilities, quality issues, and style problems. Supports Go, Python,
-and JavaScript. Returns a score (0-100), list of issues, and suggestions.
+Routes submissions to the appropriate evaluator based on file type:
+  - Code files with rules (.go, .py, .js, .ts) -> pattern-based static analysis
+  - Code files without rules (.c, .java, .rb, etc.) -> recognized, no analysis yet
+  - Writing files (.md, .txt, .rst, .html) -> writing quality evaluation
+  - Unknown files -> score 0 with suggestion
 
-The analyzer detects the language from the file extension, applies the
-corresponding rule set line-by-line, deduplicates findings, and computes
-a weighted score based on issue severity.
+Both evaluators return results on the same 0-100 scale with the same
+structure (score, issues, suggestions) for consistent API responses.
 """
 
 import os
 
 from ai.rules.patterns import (
     EXTENSION_MAP,
+    KNOWN_CODE_EXTENSIONS,
     LANGUAGE_RULES,
     SEVERITY_WEIGHT,
     SUPPORTED_LANGUAGES,
 )
+from ai.writing import evaluate_writing, is_writing_file
 
 
 def detect_language(filename: str) -> str | None:
@@ -29,6 +32,12 @@ def detect_language(filename: str) -> str | None:
     """
     ext = os.path.splitext(filename)[1].lower()
     return EXTENSION_MAP.get(ext)
+
+
+def is_known_code_file(filename: str) -> bool:
+    """Check if a filename is a recognized code file (with or without rules)."""
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in KNOWN_CODE_EXTENSIONS
 
 
 def analyze(content: str, filename: str) -> dict:
@@ -48,15 +57,31 @@ def analyze(content: str, filename: str) -> dict:
     """
     language = detect_language(filename)
 
-    # If the language is not supported, return a neutral result
-    # with a suggestion to submit a supported file type.
+    # Route writing files to the writing evaluator.
+    if language is None and is_writing_file(filename):
+        return evaluate_writing(content, filename)
+
+    # Recognized code file but no analysis rules available yet.
+    if language is None and is_known_code_file(filename):
+        ext = os.path.splitext(filename)[1].lower()
+        return {
+            "score": 0,
+            "issues": [],
+            "suggestions": [
+                f"File recognized as code ({ext}) but no analysis rules available yet. "
+                f"Languages with rules: Go, Python, JavaScript/TypeScript."
+            ],
+            "language": None,
+        }
+
+    # Truly unknown file type.
     if language is None or language not in SUPPORTED_LANGUAGES:
         return {
             "score": 0,
             "issues": [],
             "suggestions": [
-                f"Language not supported for analysis (file: {filename}). "
-                f"Supported: Go (.go), Python (.py), JavaScript (.js/.ts)."
+                f"File type not supported for analysis (file: {filename}). "
+                f"Supported: Go, Python, JavaScript, Markdown, text, RST, HTML."
             ],
             "language": None,
         }
@@ -142,6 +167,21 @@ def _generate_suggestions(issues: list[dict], language: str) -> list[str]:
 
     if "style" in issue_types:
         suggestions.append("Style issues found — apply consistent formatting and remove debug statements")
+
+    if "formatting" in issue_types:
+        suggestions.append("Formatting issues found — apply auto-formatter (gofmt, black, prettier)")
+
+    if "incompleteness" in issue_types:
+        suggestions.append("Incomplete code detected — finish implementations before shipping")
+
+    if "logic" in issue_types:
+        suggestions.append("Potential logic errors found — review carefully for bugs")
+
+    if "deprecated" in issue_types:
+        suggestions.append("Deprecated APIs detected — migrate to modern alternatives")
+
+    if "obsolete" in issue_types:
+        suggestions.append("Obsolete patterns found — update to current practices")
 
     if not issues:
         suggestions.append("No issues detected — code looks clean")

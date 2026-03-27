@@ -1,11 +1,11 @@
 """
 Tests for the PoSA code quality analyzer.
 
-Covers language detection, rule matching for Go/Python/JavaScript,
+Covers language detection, rule matching for all supported languages,
 scoring calculation, suggestion generation, and edge cases.
 """
 
-from ai.analyzer import analyze, detect_language
+from ai.analyzer import analyze, detect_language, is_known_code_file
 
 # --- Language Detection Tests ---
 
@@ -35,8 +35,48 @@ def test_detect_tsx():
     assert detect_language("component.tsx") == "javascript"
 
 
+def test_detect_c():
+    assert detect_language("main.c") == "c"
+
+
+def test_detect_java():
+    assert detect_language("Main.java") == "java"
+
+
+def test_detect_rust():
+    assert detect_language("lib.rs") == "rust"
+
+
+def test_detect_ruby():
+    assert detect_language("app.rb") == "ruby"
+
+
+def test_detect_php():
+    assert detect_language("index.php") == "php"
+
+
+def test_detect_shell():
+    assert detect_language("deploy.sh") == "shell"
+
+
+def test_detect_sql():
+    assert detect_language("query.sql") == "sql"
+
+
+def test_detect_css():
+    assert detect_language("style.css") == "css"
+
+
+def test_detect_config():
+    assert detect_language("config.yaml") == "config"
+
+
+def test_detect_terraform():
+    assert detect_language("main.tf") == "terraform"
+
+
 def test_detect_unsupported():
-    assert detect_language("style.css") is None
+    assert detect_language("data.xyz") is None
 
 
 def test_detect_no_extension():
@@ -87,7 +127,6 @@ func query(db *sql.DB, name string) {
     db.Query("SELECT * FROM users WHERE name=" + name)
 }
 """
-    # The pattern matches sql.Query with + concatenation.
     result = analyze(code, "db.go")
     security_issues = [i for i in result["issues"] if i["issue_type"] == "security"]
     assert len(security_issues) > 0
@@ -362,6 +401,160 @@ def test_js_settimeout_string():
     assert any("setTimeout" in i["message"] for i in result["issues"])
 
 
+# --- C/C++ Analysis Tests ---
+
+
+def test_c_strcpy():
+    """strcpy should be flagged as buffer overflow risk."""
+    result = analyze("strcpy(dest, src);", "vuln.c")
+    assert any("strcpy" in i["message"] for i in result["issues"])
+    assert result["language"] == "c"
+
+
+def test_c_system():
+    """system() in C should be flagged."""
+    result = analyze('system("ls -la");', "cmd.c")
+    assert any("system()" in i["message"] for i in result["issues"])
+
+
+def test_c_clean():
+    """Clean C code should score 100."""
+    result = analyze("int main() { return 0; }\n", "clean.c")
+    assert result["score"] == 100
+
+
+# --- Java Analysis Tests ---
+
+
+def test_java_runtime_exec():
+    """Runtime.exec should be flagged."""
+    result = analyze('Runtime.getRuntime().exec("cmd");', "Cmd.java")
+    assert any("Runtime.exec" in i["message"] for i in result["issues"])
+    assert result["language"] == "java"
+
+
+def test_java_sysout():
+    """System.out.println should be flagged."""
+    result = analyze('System.out.println("debug");', "Debug.java")
+    assert any("System.out.print" in i["message"] for i in result["issues"])
+
+
+# --- Rust Analysis Tests ---
+
+
+def test_rust_unwrap():
+    """unwrap() should be flagged."""
+    result = analyze("let val = result.unwrap();", "main.rs")
+    assert any("unwrap()" in i["message"] for i in result["issues"])
+    assert result["language"] == "rust"
+
+
+def test_rust_unsafe():
+    """unsafe blocks should be flagged."""
+    result = analyze("unsafe { ptr::read(p) }", "raw.rs")
+    assert any("unsafe" in i["message"] for i in result["issues"])
+
+
+# --- Ruby Analysis Tests ---
+
+
+def test_ruby_eval():
+    """eval in Ruby should be flagged."""
+    result = analyze("eval(user_input)", "danger.rb")
+    assert any("eval" in i["message"] for i in result["issues"])
+    assert result["language"] == "ruby"
+
+
+def test_ruby_system():
+    """system() in Ruby should be flagged."""
+    result = analyze('system("rm -rf /")', "bad.rb")
+    assert any("system()" in i["message"] for i in result["issues"])
+
+
+# --- PHP Analysis Tests ---
+
+
+def test_php_eval():
+    """eval in PHP should be flagged."""
+    result = analyze("eval($code);", "bad.php")
+    assert any("eval()" in i["message"] for i in result["issues"])
+    assert result["language"] == "php"
+
+
+def test_php_shell_exec():
+    """shell_exec in PHP should be flagged."""
+    result = analyze("shell_exec($cmd);", "cmd.php")
+    assert any("shell_exec" in i["message"] for i in result["issues"])
+
+
+# --- Shell Analysis Tests ---
+
+
+def test_shell_eval():
+    """eval in shell should be flagged."""
+    result = analyze("eval $user_input", "bad.sh")
+    assert any("eval" in i["message"] for i in result["issues"])
+    assert result["language"] == "shell"
+
+
+def test_shell_chmod_777():
+    """chmod 777 should be flagged."""
+    result = analyze("chmod 777 /var/www", "deploy.sh")
+    assert any("chmod 777" in i["message"] for i in result["issues"])
+
+
+# --- SQL Analysis Tests ---
+
+
+def test_sql_select_star():
+    """SELECT * should be flagged."""
+    result = analyze("SELECT * FROM users;", "query.sql")
+    assert any("SELECT *" in i["message"] for i in result["issues"])
+    assert result["language"] == "sql"
+
+
+def test_sql_grant_all():
+    """GRANT ALL PRIVILEGES should be flagged."""
+    result = analyze("GRANT ALL PRIVILEGES ON *.* TO 'user';", "perms.sql")
+    assert any("GRANT ALL" in i["message"] for i in result["issues"])
+
+
+# --- CSS Analysis Tests ---
+
+
+def test_css_important():
+    """!important should be flagged."""
+    result = analyze("color: red !important;", "style.css")
+    assert any("!important" in i["message"] for i in result["issues"])
+    assert result["language"] == "css"
+
+
+# --- Config Analysis Tests ---
+
+
+def test_config_hardcoded_secret():
+    """Hardcoded secrets in config should be flagged."""
+    result = analyze('api_key: "sk-1234567890abcdef"', "config.yaml")
+    assert any("secret" in i["message"].lower() for i in result["issues"])
+    assert result["language"] == "config"
+
+
+def test_config_clean():
+    """Config without secrets should score 100."""
+    result = analyze("port: 8080\nhost: api.example.com\n", "config.yaml")
+    assert result["score"] == 100
+
+
+# --- Terraform Analysis Tests ---
+
+
+def test_terraform_open_cidr():
+    """0.0.0.0/0 in security groups should be flagged."""
+    result = analyze('cidr_blocks = ["0.0.0.0/0"]', "main.tf")
+    assert any("0.0.0.0/0" in i["message"] for i in result["issues"])
+    assert result["language"] == "terraform"
+
+
 # --- Scoring Tests ---
 
 
@@ -390,7 +583,6 @@ console.log(x);
 
 def test_score_floor_at_zero():
     """Score should never go below 0."""
-    # Stack many high-severity issues to exceed 100 points of deductions.
     code = "\n".join([f'eval("line{i}");' for i in range(10)])
     result = analyze(code, "terrible.js")
     assert result["score"] == 0
@@ -423,11 +615,24 @@ def test_suggestions_clean():
 
 
 def test_unsupported_language():
-    """Unsupported file types return score 0 with a suggestion."""
-    result = analyze("body { color: red; }", "style.css")
+    """Truly unknown file types return score 0 with 'not supported'."""
+    result = analyze("some random content", "data.xyz")
     assert result["score"] == 0
     assert result["language"] is None
     assert any("not supported" in s.lower() for s in result["suggestions"])
+
+
+def test_is_known_code_file():
+    """is_known_code_file should recognize common code extensions."""
+    assert is_known_code_file("main.c") is True
+    assert is_known_code_file("App.java") is True
+    assert is_known_code_file("lib.rs") is True
+    assert is_known_code_file("script.rb") is True
+    assert is_known_code_file("style.css") is True
+    assert is_known_code_file("query.sql") is True
+    assert is_known_code_file("main.go") is True
+    assert is_known_code_file("data.xyz") is False
+    assert is_known_code_file("README.md") is False
 
 
 def test_empty_content():

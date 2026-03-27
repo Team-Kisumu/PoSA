@@ -13,6 +13,45 @@ the file extension and applies the corresponding rule set.
 
 import re
 
+from ai.rules.compiled_langs import (
+    C_RULES,
+    CSHARP_RULES,
+    JAVA_RULES,
+    PHP_RULES,
+    RUBY_RULES,
+    RUST_RULES,
+    SHELL_RULES,
+    SWIFT_RULES,
+)
+from ai.rules.other_langs import (
+    CLOJURE_RULES,
+    CONFIG_RULES,
+    CSS_RULES,
+    DART_RULES,
+    ELIXIR_RULES,
+    ERLANG_RULES,
+    HASKELL_RULES,
+    KOTLIN_RULES,
+    LUA_RULES,
+    PERL_RULES,
+    R_RULES,
+    SCALA_RULES,
+    SQL_RULES,
+    TERRAFORM_RULES,
+)
+from ai.rules.quality_rules import (
+    DEPRECATED_RULES,
+    FORMATTING_RULES,
+    INCOMPLETENESS_RULES,
+    OBSOLETE_RULES,
+    WRONG_CODE_RULES,
+)
+
+# Cross-language rules applied to every code file.
+# These detect formatting issues, incomplete code, logic errors,
+# deprecated APIs, and obsolete patterns regardless of language.
+CROSS_LANGUAGE_RULES = FORMATTING_RULES + INCOMPLETENESS_RULES + WRONG_CODE_RULES + DEPRECATED_RULES + OBSOLETE_RULES
+
 # Severity weights used to calculate the final score.
 # Each matched rule deducts its severity weight from 100.
 SEVERITY_WEIGHT = {
@@ -21,20 +60,218 @@ SEVERITY_WEIGHT = {
     "low": 3,
 }
 
-# Map file extensions to language identifiers.
+# Map file extensions to language identifiers (languages with analysis rules).
 EXTENSION_MAP = {
+    # Go
     ".go": "go",
+    # Python
     ".py": "python",
+    # JavaScript / TypeScript
     ".js": "javascript",
     ".jsx": "javascript",
     ".ts": "javascript",
     ".tsx": "javascript",
     ".mjs": "javascript",
     ".cjs": "javascript",
+    # C / C++
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "c",
+    ".cc": "c",
+    ".cxx": "c",
+    ".hpp": "c",
+    ".hxx": "c",
+    ".hh": "c",
+    # Java
+    ".java": "java",
+    # C#
+    ".cs": "csharp",
+    # Ruby
+    ".rb": "ruby",
+    ".erb": "ruby",
+    ".rake": "ruby",
+    ".gemspec": "ruby",
+    # Rust
+    ".rs": "rust",
+    # PHP
+    ".php": "php",
+    # Swift / Objective-C
+    ".swift": "swift",
+    ".m": "swift",
+    # Shell
+    ".sh": "shell",
+    ".bash": "shell",
+    ".zsh": "shell",
+    ".fish": "shell",
+    # Perl
+    ".pl": "perl",
+    ".pm": "perl",
+    # R
+    ".r": "r",
+    ".R": "r",
+    # Lua
+    ".lua": "lua",
+    # Dart
+    ".dart": "dart",
+    # Elixir
+    ".ex": "elixir",
+    ".exs": "elixir",
+    # Erlang
+    ".erl": "erlang",
+    ".hrl": "erlang",
+    # Haskell
+    ".hs": "haskell",
+    ".lhs": "haskell",
+    # Clojure
+    ".clj": "clojure",
+    ".cljs": "clojure",
+    ".cljc": "clojure",
+    ".edn": "clojure",
+    # Scala
+    ".scala": "scala",
+    ".sc": "scala",
+    # Kotlin
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    # Groovy
+    ".groovy": "kotlin",
+    ".gradle": "kotlin",
+    # SQL
+    ".sql": "sql",
+    # CSS
+    ".css": "css",
+    ".scss": "css",
+    ".sass": "css",
+    ".less": "css",
+    # Config / Data
+    ".json": "config",
+    ".yaml": "config",
+    ".yml": "config",
+    ".toml": "config",
+    ".xml": "config",
+    ".ini": "config",
+    ".cfg": "config",
+    ".conf": "config",
+    ".env": "config",
+    ".properties": "config",
+    ".csv": "config",
+    # Infrastructure
+    ".tf": "terraform",
+    ".hcl": "terraform",
+    ".dockerfile": "terraform",
+    # VB.NET
+    ".vb": "csharp",
+    # F#
+    ".fs": "csharp",
+    ".fsx": "csharp",
+    # Jupyter (treated as config for secret detection)
+    ".ipynb": "config",
 }
 
 # Supported languages for analysis.
 SUPPORTED_LANGUAGES = set(EXTENSION_MAP.values())
+# Known code file extensions — recognized as code but may not have analysis rules yet.
+# Extensions in EXTENSION_MAP get full rule-based analysis.
+# Extensions only in KNOWN_CODE_EXTENSIONS are recognized as code and receive
+# a "no rules available" response instead of "unsupported file type".
+KNOWN_CODE_EXTENSIONS = {
+    # Languages with analysis rules (also in EXTENSION_MAP)
+    ".go",
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".mjs",
+    ".cjs",
+    # C / C++
+    ".c",
+    ".h",
+    ".cpp",
+    ".cc",
+    ".cxx",
+    ".hpp",
+    ".hxx",
+    ".hh",
+    # Java / JVM
+    ".java",
+    ".kt",
+    ".kts",
+    ".scala",
+    ".sc",
+    ".groovy",
+    ".gradle",
+    # C# / .NET
+    ".cs",
+    ".fs",
+    ".fsx",
+    ".vb",
+    # Ruby
+    ".rb",
+    ".erb",
+    ".rake",
+    ".gemspec",
+    # Rust
+    ".rs",
+    # PHP
+    ".php",
+    # Swift / Objective-C
+    ".swift",
+    ".m",
+    # Shell
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
+    # Perl
+    ".pl",
+    ".pm",
+    # R
+    ".r",
+    ".R",
+    # Lua
+    ".lua",
+    # Dart
+    ".dart",
+    # Elixir / Erlang
+    ".ex",
+    ".exs",
+    ".erl",
+    ".hrl",
+    # Haskell
+    ".hs",
+    ".lhs",
+    # Clojure
+    ".clj",
+    ".cljs",
+    ".cljc",
+    ".edn",
+    # SQL
+    ".sql",
+    # Data / Config (code-adjacent)
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".xml",
+    ".csv",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".env",
+    ".properties",
+    # Infrastructure
+    ".tf",
+    ".hcl",
+    ".dockerfile",
+    # CSS / Styling
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    # Jupyter
+    ".ipynb",
+}
 
 
 # --- Go Rules ---
@@ -257,8 +494,33 @@ JAVASCRIPT_RULES = [
 ]
 
 # Map language identifiers to their rule sets.
-LANGUAGE_RULES = {
+# Each language gets its own rules plus the cross-language rules.
+_BASE_RULES = {
     "go": GO_RULES,
     "python": PYTHON_RULES,
     "javascript": JAVASCRIPT_RULES,
+    "c": C_RULES,
+    "java": JAVA_RULES,
+    "csharp": CSHARP_RULES,
+    "ruby": RUBY_RULES,
+    "rust": RUST_RULES,
+    "php": PHP_RULES,
+    "swift": SWIFT_RULES,
+    "shell": SHELL_RULES,
+    "perl": PERL_RULES,
+    "r": R_RULES,
+    "lua": LUA_RULES,
+    "dart": DART_RULES,
+    "elixir": ELIXIR_RULES,
+    "erlang": ERLANG_RULES,
+    "haskell": HASKELL_RULES,
+    "clojure": CLOJURE_RULES,
+    "scala": SCALA_RULES,
+    "kotlin": KOTLIN_RULES,
+    "sql": SQL_RULES,
+    "css": CSS_RULES,
+    "config": CONFIG_RULES,
+    "terraform": TERRAFORM_RULES,
 }
+
+LANGUAGE_RULES = {lang: rules + CROSS_LANGUAGE_RULES for lang, rules in _BASE_RULES.items()}

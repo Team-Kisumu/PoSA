@@ -11,11 +11,12 @@ Each component has its own test suite using the idiomatic testing framework for 
 | Backend handlers (Go) | `testing` + `httptest` | 80%+ | 93.2% |
 | Backend validation (Go) | `testing` | 95%+ | 97.0% |
 | Backend middleware (Go) | `testing` + `httptest` | 100% | 100% |
+| AI analyzer (Python) | `pytest` | 80%+ | 150 tests |
 | AI Engine (Python) | `pytest` | 80%+ | — |
 | Frontend (Node) | Jest / Vitest | 70%+ | — |
 | Smart Contracts | Flow Test / cargo test | 100% | — |
 
-Tests are split into **validator tests** (input validation + content filtering), **type tests** (serialization), **unit tests** (isolated handler logic), **integration tests** (full mux routing + middleware), and **middleware tests**.
+Tests are split into **validator tests** (input validation + content filtering), **type tests** (serialization), **unit tests** (isolated handler logic), **integration tests** (full mux routing + middleware), **analyzer tests** (code + writing + quality rules), and **middleware tests**.
 
 ## Test Scripts
 

@@ -117,11 +117,11 @@ def test_evaluate_js_with_innerhtml(client):
 
 
 def test_evaluate_unsupported_language(client):
-    """Unsupported file types return score 0 with a suggestion."""
+    """Truly unknown file types return score 0 with a suggestion."""
     payload = {
         "submission_type": "file",
-        "name": "style.css",
-        "content": "body { color: red; }",
+        "name": "data.xyz",
+        "content": "some random content",
         "mime": "text/plain",
     }
     resp = client.post("/evaluate", json=payload)
