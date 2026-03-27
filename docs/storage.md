@@ -2,22 +2,24 @@
 
 > **Status:** Implemented (Phase 3)
 
-The storage layer persists AI evaluation reports on IPFS/Filecoin and returns content-addressed CIDs for blockchain anchoring. Uses [go-synapse](https://github.com/data-preservation-programs/go-synapse) for native Filecoin integration with Proof of Data Possession (PDP).
+The storage layer persists AI evaluation reports on IPFS/Filecoin and returns content-addressed CIDs for blockchain anchoring.
 
 ## Technology
 
-- **Storage:** IPFS (content-addressed) + Filecoin (long-term persistence with PDP)
-- **SDK:** [go-synapse](https://github.com/data-preservation-programs/go-synapse) — Go SDK for Filecoin Synapse protocol
-- **Backends:** Local IPFS node (development) or Filecoin via go-synapse (production)
-- **Language:** Go
-- **Package:** `backend/storage/`
+| Component | Technology | Purpose |
+|---|---|---|
+| Local storage | IPFS HTTP API | Development — upload/retrieve via local node |
+| Chain access | [Beryx (Zondax)](https://docs.zondax.ch/beryx) | Authenticated Filecoin RPC + data API |
+| Storage SDK | [go-synapse](https://github.com/data-preservation-programs/go-synapse) | Native Filecoin storage with PDP (when providers available) |
+| Language | Go | stdlib `net/http` + go-synapse + go-ethereum |
 
 ## Directory Structure
 
 ```md
 backend/storage/
-├── ipfs.go          # Store interface, FilecoinClient (go-synapse), IPFSClient, factory
-└── ipfs_test.go     # 8 tests (IPFS mocks + factory + config validation)
+├── ipfs.go                      # Store interface, BeryxClient, FilecoinClient, IPFSClient, factory
+├── ipfs_test.go                 # 8 unit tests (IPFS mocks + factory + config validation)
+└── beryx_integration_test.go    # 5 integration tests (live Beryx RPC, build tag: integration)
 ```
 
 ## Architecture
@@ -31,107 +33,144 @@ type Store interface {
 }
 ```
 
-### Backend Selection
+### Three Backends
 
 ```mmd
-NewStore(ipfsURL, filecoinCfg)
-  ├── filecoinCfg.PrivateKeyHex set? → FilecoinClient (go-synapse)
-  └── otherwise                      → IPFSClient (default: localhost:5001)
+                    ┌─────────────────────────────────────┐
+                    │           Store Interface            │
+                    │       Upload() / Retrieve()          │
+                    └──────┬──────────┬──────────┬────────┘
+                           │          │          │
+                    ┌──────▼──┐ ┌─────▼────┐ ┌──▼────────┐
+                    │  Beryx  │ │ Filecoin │ │   IPFS    │
+                    │ Client  │ │  Client  │ │  Client   │
+                    │ (chain) │ │(storage) │ │  (local)  │
+                    └─────────┘ └──────────┘ └───────────┘
 ```
+
+| Backend | Use Case | Auth | Data Operations |
+|---|---|---|---|
+| **BeryxClient** | Chain queries, provider discovery | JWT Bearer token | Read-only (ChainID, BlockNumber, ListProviders) |
+| **FilecoinClient** | Production storage (when providers register) | ECDSA private key | Upload (UploadBytes) + Retrieve (Download) |
+| **IPFSClient** | Local development | None | Upload (/api/v0/add) + Retrieve (/api/v0/cat) |
+
+### BeryxClient (Zondax)
+
+Authenticated access to Filecoin via Beryx RPC proxy:
+
+```go
+client, err := NewBeryxClient(BeryxConfig{
+    RPCURL:   "https://api.zondax.ch/fil/node/mainnet/rpc/v1",
+    APIToken: os.Getenv("BERYX_API_TOKEN"),
+})
+// Chain queries
+chainID := client.ChainID()       // 314 (mainnet)
+block, _ := client.BlockNumber()   // latest height
+providers, _ := client.ListProviders() // on-chain SP registry
+```
+
+Beryx endpoints:
+- **RPC proxy:** `https://api.zondax.ch/fil/node/mainnet/rpc/v1`
+- **Data API:** `https://api.zondax.ch/fil/data/v4/mainnet`
+- **Calibration RPC:** `https://api.zondax.ch/fil/node/calibration/rpc/v1`
 
 ### FilecoinClient (go-synapse)
 
-The FilecoinClient uses go-synapse to interact with Filecoin storage providers:
-
-- **Upload:** `storage.Manager.UploadBytes()` — sends data to the storage provider, returns a piece CID
-- **Retrieve:** `storage.Manager.Download()` — fetches data by piece CID from the provider
-- **PDP:** Proof of Data Possession — on-chain verification that the provider still holds the data
-- **Network:** Supports Filecoin Mainnet (chain ID 314) and Calibration testnet (chain ID 314159)
+Native Filecoin storage via the Synapse protocol:
 
 ```go
-client, err := synapse.New(ctx, synapse.Options{
-    PrivateKey:  privateKey,
-    RPCURL:      "https://api.calibration.node.glif.io/rpc/v1",
-    ProviderURL: "https://provider.example.com",
+client, err := NewFilecoinClient(FilecoinConfig{
+    PrivateKeyHex: os.Getenv("FILECOIN_PRIVATE_KEY"),
+    RPCURL:        os.Getenv("FILECOIN_RPC_URL"),
+    ProviderURL:   os.Getenv("FILECOIN_PROVIDER_URL"),
 })
-storage, _ := client.Storage()
-result, _ := storage.UploadBytes(ctx, reportJSON, nil)
-// result.PieceCID is the content identifier
+cid, _ := client.Upload(reportJSON)
+data, _ := client.Retrieve(cid)
 ```
 
-### IPFSClient (HTTP API)
+### IPFSClient (Local)
 
-For local development without Filecoin:
+For development without Filecoin:
 
-| Method | Endpoint | Description |
-|---|---|---|
-| Upload | `POST /api/v0/add` | Multipart upload, returns `{"Hash": "Qm..."}` |
-| Retrieve | `POST /api/v0/cat?arg={cid}` | Returns raw report bytes |
+```go
+client := NewIPFSClient("http://localhost:5001")
+cid, _ := client.Upload(reportJSON)   // POST /api/v0/add
+data, _ := client.Retrieve(cid)       // POST /api/v0/cat?arg={cid}
+```
 
 ## Environment Variables
 
-| Variable | Description | Default |
+| Variable | Description | Example |
 |---|---|---|
-| `IPFS_API_URL` | Local IPFS node HTTP API URL | `http://localhost:5001` |
-| `FILECOIN_RPC_URL` | Filecoin RPC endpoint (auto-detects network from chain ID) | `https://api.calibration.node.glif.io/rpc/v1` |
-| `FILECOIN_PROVIDER_URL` | Storage provider API endpoint (from SP Registry) | — |
-| `FILECOIN_PRIVATE_KEY` | Hex-encoded ECDSA private key for signing transactions | — |
+| `IPFS_API_URL` | Local IPFS node URL | `http://localhost:5001` |
+| `BERYX_API_TOKEN` | Beryx JWT token for authenticated RPC | `eyJhbG...` |
+| `FILECOIN_RPC_URL` | Filecoin RPC (Beryx or Glif) | `https://api.zondax.ch/fil/node/mainnet/rpc/v1` |
+| `FILECOIN_DATA_URL` | Beryx data API | `https://api.zondax.ch/fil/data/v4/mainnet` |
+| `FILECOIN_PROVIDER_URL` | go-synapse storage provider URL | — (none registered yet) |
+| `FILECOIN_PRIVATE_KEY` | ECDSA hex key for go-synapse transactions | — |
 
-### RPC Endpoints (public, no auth needed)
+### RPC Endpoints
 
-| Network | Chain ID | RPC URL |
-|---|---|---|
-| Filecoin Mainnet | 314 | `https://api.node.glif.io/rpc/v1` |
-| Filecoin Calibration | 314159 | `https://api.calibration.node.glif.io/rpc/v1` |
-
-### Network Auto-Detection
-
-go-synapse automatically detects the network from the RPC chain ID and resolves all contract addresses. No manual contract address configuration is needed.
+| Provider | Network | URL | Auth |
+|---|---|---|---|
+| Beryx (Zondax) | Mainnet | `https://api.zondax.ch/fil/node/mainnet/rpc/v1` | Bearer JWT |
+| Beryx (Zondax) | Calibration | `https://api.zondax.ch/fil/node/calibration/rpc/v1` | Bearer JWT |
+| Glif (public) | Mainnet | `https://api.node.glif.io/rpc/v1` | None |
+| Glif (public) | Calibration | `https://api.calibration.node.glif.io/rpc/v1` | None |
 
 ## Running
 
 ```bash
-# Local development (IPFS node)
+# Local development (IPFS)
 export IPFS_API_URL=http://localhost:5001
 cd backend && go run main.go
 
-# Production (Filecoin via go-synapse)
-export FILECOIN_RPC_URL=https://api.calibration.node.glif.io/rpc/v1
-export FILECOIN_PROVIDER_URL=https://your-provider.example.com
-export FILECOIN_PRIVATE_KEY=your-hex-private-key
+# With Beryx chain access
+export BERYX_API_TOKEN=your-jwt-token
+export FILECOIN_RPC_URL=https://api.zondax.ch/fil/node/mainnet/rpc/v1
 cd backend && go run main.go
 ```
 
 ## Testing
+
+### Unit tests (no network needed)
 
 ```bash
 cd backend && go test -race -v ./storage/
 # 8 tests, ~1s
 ```
 
-### Test Summary
-
-| Test | Verifies |
-|---|---|
-| `TestIPFSUpload` | Multipart upload, CID extraction from Hash field |
-| `TestIPFSUploadError` | Error handling for 500 response |
-| `TestIPFSUploadEmptyCID` | Error handling for empty Hash |
-| `TestIPFSRetrieve` | Fetch by CID, correct query parameter |
-| `TestIPFSRetrieveError` | Error handling for 404 response |
-| `TestNewStoreIPFS` | Factory returns IPFSClient when no Filecoin config |
-| `TestNewStoreDefaultIPFS` | Factory uses default localhost:5001 |
-| `TestFilecoinConfigValidation` | Invalid private key rejected |
-
-### Integration Testing
-
-Full Filecoin integration tests require a Calibration testnet account:
+### Integration tests (requires BERYX_API_TOKEN)
 
 ```bash
-export FILECOIN_RPC_URL=https://api.calibration.node.glif.io/rpc/v1
-export FILECOIN_PROVIDER_URL=https://your-provider.example.com
-export FILECOIN_PRIVATE_KEY=your-test-private-key
+export BERYX_API_TOKEN=your-jwt-token
 cd backend && go test -tags=integration -v ./storage/
+# 13 tests (8 unit + 5 integration), ~9s
 ```
+
+### E2E test script
+
+```bash
+./scripts/test_e2e_storage.sh
+```
+
+### Test Summary
+
+| Test | Type | Verifies |
+|---|---|---|
+| `TestIPFSUpload` | Unit | Multipart upload, CID extraction |
+| `TestIPFSUploadError` | Unit | Error handling for 500 |
+| `TestIPFSUploadEmptyCID` | Unit | Empty Hash rejection |
+| `TestIPFSRetrieve` | Unit | Fetch by CID |
+| `TestIPFSRetrieveError` | Unit | Error handling for 404 |
+| `TestNewStoreIPFS` | Unit | Factory returns IPFSClient |
+| `TestNewStoreDefaultIPFS` | Unit | Default localhost:5001 |
+| `TestFilecoinConfigValidation` | Unit | Invalid private key rejected |
+| `TestBeryxConnection` | Integration | Chain ID = 314 (mainnet) |
+| `TestBeryxBlockNumber` | Integration | Block > 5,000,000 |
+| `TestBeryxNetwork` | Integration | Network = mainnet |
+| `TestBeryxListProviders` | Integration | SP Registry query |
+| `TestBeryxUploadNotSupported` | Integration | Clear error for upload via RPC |
 
 ## Contract Addresses (auto-resolved by go-synapse)
 
@@ -143,16 +182,9 @@ cd backend && go test -tags=integration -v ./storage/
 | FWSS | `0x8408502033C418E1bbC97cE9ac48E5528F371A9f` | `0x02925630df557F957f70E112bA06e50965417CA0` |
 | SessionKeyRegistry | `0x74FD50525A958aF5d484601E252271f9625231aB` | `0x518411c2062E119Aaf7A8B12A2eDf9a939347655` |
 
-### Storage Provider Discovery
+## Current Status
 
-Storage providers register on-chain via the SP Registry contract. The go-synapse SDK can query active providers:
-
-```go
-registry, _ := spregistry.NewService(client, registryAddr, nil, chainID)
-providers, _ := registry.GetAllActiveProviders(ctx)
-for _, p := range providers {
-    // p.Products["pdp"].Data.ServiceURL is the provider URL
-}
-```
-
-Note: The Synapse protocol is new. As of the current deployment, no public storage providers are registered on either mainnet or calibration. For development, use the local IPFS backend (`IPFS_API_URL`).
+- **IPFS local:** Fully functional for development
+- **Beryx RPC:** Connected to Filecoin Mainnet (chain ID 314, block 5.8M+)
+- **go-synapse storage:** SDK integrated, awaiting storage provider registration on Synapse protocol
+- **Provider discovery:** `BeryxClient.ListProviders()` queries on-chain SP Registry (currently 0 active providers)
