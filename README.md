@@ -187,7 +187,7 @@ pub contract Proof {
 - [Go](https://go.dev/) (1.21+)
 - [Node.js](https://nodejs.org/) (18+)
 - [Python](https://www.python.org/) (3.10+)
-- IPFS node or [Pinata](https://www.pinata.cloud/) API key
+- IPFS node or [web3.storage](https://web3.storage/) API token (Filecoin)
 - Blockchain SDK (Flow CLI / NEAR CLI)
 
 ### Setup
@@ -218,7 +218,10 @@ python evaluator.py
 | Variable | Description |
 |---|---|
 | `AI_API_KEY` | API key for the AI evaluation engine |
-| `IPFS_API_URL` | IPFS node or Pinata gateway URL |
+| `IPFS_API_URL` | IPFS node URL (local development) |
+| `FILECOIN_RPC_URL` | Filecoin RPC endpoint (calibration or mainnet) |
+| `FILECOIN_PROVIDER_URL` | Storage provider API endpoint |
+| `FILECOIN_PRIVATE_KEY` | Hex-encoded ECDSA private key for Filecoin transactions |
 | `BLOCKCHAIN_RPC` | Flow/NEAR RPC endpoint |
 | `CONTRACT_ADDRESS` | Deployed smart contract address |
 
@@ -317,7 +320,7 @@ flowchart TD
 | Risk | Description | Mitigation |
 |---|---|---|
 | AI Poisoning | Malicious inputs trick the model | Input sanitization + multi-model validation |
-| Data Exposure | IPFS content is public by default | Encrypt reports with [Lit Protocol](https://litprotocol.com/) |
+| Data Exposure | IPFS content is public by default | Encrypt reports with [Lit Protocol v1 Naga SDK](https://developer.litprotocol.com/) |
 | Smart Contract Bugs | Exploits in mint logic | Minimal contract surface + formal audits |
 | Replay Attacks | Reusing old proofs | Unique submission IDs + timestamps |
 

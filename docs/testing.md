@@ -11,12 +11,13 @@ Each component has its own test suite using the idiomatic testing framework for 
 | Backend handlers (Go) | `testing` + `httptest` | 80%+ | 93.2% |
 | Backend validation (Go) | `testing` | 95%+ | 97.0% |
 | Backend middleware (Go) | `testing` + `httptest` | 100% | 100% |
+| Backend storage (Go) | `testing` + `httptest` | 80%+ | 8 unit + 5 integration |
 | AI analyzer (Python) | `pytest` | 80%+ | 150 tests |
-| AI Engine (Python) | `pytest` | 80%+ | — |
+| AI Impulse integration | `pytest` + e2e script | — | 3 e2e suites |
 | Frontend (Node) | Jest / Vitest | 70%+ | — |
-| Smart Contracts | Flow Test / cargo test | 100% | — |
+| Smart Contracts | Flow Test | 100% | — |
 
-Tests are split into **validator tests** (input validation + content filtering), **type tests** (serialization), **unit tests** (isolated handler logic), **integration tests** (full mux routing + middleware), **analyzer tests** (code + writing + quality rules), and **middleware tests**.
+Tests are split into **validator tests** (input validation + content filtering), **type tests** (serialization), **unit tests** (isolated handler logic), **integration tests** (full mux routing + middleware + live API), **analyzer tests** (code + writing + quality rules), **storage tests** (IPFS mocks + Beryx live), and **e2e tests** (full pipeline).
 
 ## Test Scripts
 
@@ -204,6 +205,32 @@ go test -v ./middleware/
 go test -coverprofile=coverage.out ./...
 go tool cover -func=coverage.out
 ```
+
+### E2E test — AI pipeline
+
+```bash
+source ai/.venv/bin/activate
+PYTHONPATH=. python scripts/test_e2e_ai.py
+```
+
+Tests local analyzer + Impulse AI + combined analysis. Requires `AI_API_KEY` in `.env`.
+
+### E2E test — Storage
+
+```bash
+./scripts/test_e2e_storage.sh
+```
+
+Tests storage unit tests, full backend suite, go-synapse dependency, and build.
+
+### Beryx integration tests
+
+```bash
+export BERYX_API_TOKEN=your-jwt-token
+cd backend && go test -tags=integration -v ./storage/
+```
+
+Tests live Filecoin RPC connection, chain queries, and SP Registry via Beryx.
 
 ## CI Integration
 
