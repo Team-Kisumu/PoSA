@@ -1,11 +1,12 @@
 // Package storage provides content-addressed storage for evaluation reports.
 //
-// Backends supported:
-//   - BeryxClient: Filecoin chain access via Beryx (Zondax) authenticated RPC
-//   - FilecoinClient: Filecoin storage via go-synapse SDK (when providers available)
-//   - IPFSClient: External IPFS node via HTTP API (local development)
+// Backends supported (in priority order):
+//   - LighthouseClient: Lighthouse.storage — stable Filecoin/IPFS pinning service (primary)
+//   - FilecoinClient: go-synapse SDK — native Filecoin PDP storage (fallback, when providers register)
+//   - BeryxClient: Beryx (Zondax) — authenticated Filecoin RPC for chain queries
+//   - IPFSClient: Local IPFS node via HTTP API (development)
 //
-// All implement the Store interface for swappable use.
+// All storage backends implement the Store interface for swappable use.
 package storage
 
 import (
@@ -142,7 +143,112 @@ func (c *BeryxClient) Close() {
 	c.rpcClient.Close()
 }
 
-// --- Filecoin Client (via go-synapse) ---
+// --- Lighthouse Client (stable Filecoin/IPFS pinning) ---
+
+// LighthouseClient stores data on Filecoin + IPFS via the Lighthouse.storage
+// pinning service. Data is pinned to IPFS immediately and backed by Filecoin
+// deals for long-term persistence. This is the primary storage backend.
+type LighthouseClient struct {
+	UploadURL  string
+	GatewayURL string
+	APIKey     string
+	Client     *http.Client
+}
+
+// LighthouseConfig holds the configuration for Lighthouse.storage.
+type LighthouseConfig struct {
+	// APIKey is the Lighthouse API key for authentication.
+	APIKey string
+	// UploadURL is the upload endpoint. Default: https://upload.lighthouse.storage
+	UploadURL string
+	// GatewayURL is the IPFS gateway for retrieval. Default: https://gateway.lighthouse.storage
+	GatewayURL string
+}
+
+// NewLighthouseClient creates a Lighthouse.storage client.
+func NewLighthouseClient(cfg LighthouseConfig) *LighthouseClient {
+	if cfg.UploadURL == "" {
+		cfg.UploadURL = "https://upload.lighthouse.storage"
+	}
+	if cfg.GatewayURL == "" {
+		cfg.GatewayURL = "https://gateway.lighthouse.storage"
+	}
+	return &LighthouseClient{
+		UploadURL:  cfg.UploadURL,
+		GatewayURL: cfg.GatewayURL,
+		APIKey:     cfg.APIKey,
+		Client:     &http.Client{Timeout: 60 * time.Second},
+	}
+}
+
+// Upload stores a JSON report on Filecoin/IPFS via Lighthouse.
+// Uses the /api/v0/add endpoint with Bearer auth and multipart form.
+// Returns the IPFS CID (content hash).
+func (c *LighthouseClient) Upload(report []byte) (string, error) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("file", "report.json")
+	if err != nil {
+		return "", fmt.Errorf("lighthouse: failed to create form file: %w", err)
+	}
+	if _, err := part.Write(report); err != nil {
+		return "", fmt.Errorf("lighthouse: failed to write report: %w", err)
+	}
+	writer.Close()
+
+	req, err := http.NewRequest(http.MethodPost, c.UploadURL+"/api/v0/add", &buf)
+	if err != nil {
+		return "", fmt.Errorf("lighthouse: failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("lighthouse: upload failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("lighthouse: upload returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Lighthouse returns JSON with a "Hash" field containing the IPFS CID.
+	var result struct {
+		Hash string `json:"Hash"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("lighthouse: failed to decode response: %w", err)
+	}
+	if result.Hash == "" {
+		return "", fmt.Errorf("lighthouse: empty CID in response")
+	}
+	return result.Hash, nil
+}
+
+// Retrieve fetches a report from the Lighthouse IPFS gateway by CID.
+func (c *LighthouseClient) Retrieve(cidStr string) ([]byte, error) {
+	url := fmt.Sprintf("%s/ipfs/%s", c.GatewayURL, cidStr)
+	resp, err := c.Client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("lighthouse: retrieve failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("lighthouse: retrieve returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("lighthouse: failed to read response: %w", err)
+	}
+	return data, nil
+}
+
+// --- Filecoin Client (via go-synapse, fallback) ---
 
 // FilecoinClient stores data on Filecoin using the go-synapse SDK.
 type FilecoinClient struct {
@@ -303,9 +409,12 @@ func (c *IPFSClient) Retrieve(cid string) ([]byte, error) {
 // --- Factory ---
 
 // NewStore creates a Store based on environment configuration.
-// Priority: Filecoin (if private key set) > IPFS (default).
+// Priority: Lighthouse (if API key set) > go-synapse Filecoin (if private key set) > IPFS (default).
 // Use NewBeryxClient separately for chain queries.
-func NewStore(ipfsURL string, filecoinCfg *FilecoinConfig) (Store, error) {
+func NewStore(ipfsURL string, lighthouseCfg *LighthouseConfig, filecoinCfg *FilecoinConfig) (Store, error) {
+	if lighthouseCfg != nil && lighthouseCfg.APIKey != "" {
+		return NewLighthouseClient(*lighthouseCfg), nil
+	}
 	if filecoinCfg != nil && filecoinCfg.PrivateKeyHex != "" {
 		return NewFilecoinClient(*filecoinCfg)
 	}

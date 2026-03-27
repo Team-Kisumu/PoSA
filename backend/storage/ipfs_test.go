@@ -113,22 +113,97 @@ func TestIPFSRetrieveError(t *testing.T) {
 	}
 }
 
+// --- Lighthouse Client Tests ---
+
+// TestLighthouseUpload verifies upload with Bearer auth and CID extraction.
+func TestLighthouseUpload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v0/add" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer test-lh-key" {
+			t.Errorf("auth = %q, want Bearer test-lh-key", auth)
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatalf("failed to parse multipart: %v", err)
+		}
+		json.NewEncoder(w).Encode(map[string]string{"Hash": "QmLighthouseTestCID1234567890abcdefghijklmnop"})
+	}))
+	defer server.Close()
+
+	client := NewLighthouseClient(LighthouseConfig{APIKey: "test-lh-key", UploadURL: server.URL})
+	cid, err := client.Upload([]byte(`{"score":90}`))
+	if err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+	if cid != "QmLighthouseTestCID1234567890abcdefghijklmnop" {
+		t.Errorf("cid = %q", cid)
+	}
+}
+
+// TestLighthouseUploadError verifies error handling for auth failure.
+func TestLighthouseUploadError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"success":false,"error":"Authentication failed"}`))
+	}))
+	defer server.Close()
+
+	client := NewLighthouseClient(LighthouseConfig{APIKey: "bad-key", UploadURL: server.URL})
+	_, err := client.Upload([]byte(`{"score":90}`))
+	if err == nil {
+		t.Error("expected error for 401 response")
+	}
+}
+
+// TestLighthouseRetrieve verifies gateway fetch by CID.
+func TestLighthouseRetrieve(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ipfs/QmTestCID" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Write([]byte(`{"score":90}`))
+	}))
+	defer server.Close()
+
+	client := NewLighthouseClient(LighthouseConfig{APIKey: "key", GatewayURL: server.URL})
+	data, err := client.Retrieve("QmTestCID")
+	if err != nil {
+		t.Fatalf("Retrieve failed: %v", err)
+	}
+	if string(data) != `{"score":90}` {
+		t.Errorf("data = %q", string(data))
+	}
+}
+
+// TestLighthouseDefaults verifies default URLs.
+func TestLighthouseDefaults(t *testing.T) {
+	client := NewLighthouseClient(LighthouseConfig{APIKey: "key"})
+	if client.UploadURL != "https://upload.lighthouse.storage" {
+		t.Errorf("UploadURL = %q", client.UploadURL)
+	}
+	if client.GatewayURL != "https://gateway.lighthouse.storage" {
+		t.Errorf("GatewayURL = %q", client.GatewayURL)
+	}
+}
+
 // --- Factory Tests ---
 
-// TestNewStoreIPFS verifies the factory returns an IPFS client when no Filecoin config is set.
+// TestNewStoreIPFS verifies the factory returns an IPFS client when no Lighthouse or Filecoin config is set.
 func TestNewStoreIPFS(t *testing.T) {
-	store, err := NewStore("http://localhost:5001", nil)
+	store, err := NewStore("http://localhost:5001", nil, nil)
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
 	}
 	if _, ok := store.(*IPFSClient); !ok {
-		t.Error("expected IPFSClient when no Filecoin config")
+		t.Error("expected IPFSClient when no Lighthouse or Filecoin config")
 	}
 }
 
 // TestNewStoreDefaultIPFS verifies the factory uses default IPFS URL when none is provided.
 func TestNewStoreDefaultIPFS(t *testing.T) {
-	store, err := NewStore("", nil)
+	store, err := NewStore("", nil, nil)
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
 	}
@@ -138,6 +213,31 @@ func TestNewStoreDefaultIPFS(t *testing.T) {
 	}
 	if client.APIURL != "http://localhost:5001" {
 		t.Errorf("APIURL = %q, want http://localhost:5001", client.APIURL)
+	}
+}
+
+// TestNewStoreLighthouse verifies the factory returns a Lighthouse client when API key is set.
+func TestNewStoreLighthouse(t *testing.T) {
+	store, err := NewStore("", &LighthouseConfig{APIKey: "test-key"}, nil)
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
+	if _, ok := store.(*LighthouseClient); !ok {
+		t.Error("expected LighthouseClient when API key is set")
+	}
+}
+
+// TestNewStoreLighthousePriority verifies Lighthouse takes priority over Filecoin.
+func TestNewStoreLighthousePriority(t *testing.T) {
+	store, err := NewStore("",
+		&LighthouseConfig{APIKey: "lh-key"},
+		&FilecoinConfig{PrivateKeyHex: "aabbccdd"},
+	)
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
+	if _, ok := store.(*LighthouseClient); !ok {
+		t.Error("expected LighthouseClient to take priority over FilecoinClient")
 	}
 }
 
