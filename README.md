@@ -318,7 +318,7 @@ flowchart TD
 | Risk | Description | Mitigation |
 |---|---|---|
 | AI Poisoning | Malicious inputs trick the model | Input sanitization + multi-model validation |
-| Data Exposure | IPFS content is public by default | Encrypt reports with [Lit Protocol](https://litprotocol.com/) |
+| Data Exposure | IPFS content is public by default | Encrypt reports with [Lit Protocol v1 Naga SDK](https://developer.litprotocol.com/) |
 | Smart Contract Bugs | Exploits in mint logic | Minimal contract surface + formal audits |
 | Replay Attacks | Reusing old proofs | Unique submission IDs + timestamps |
 
