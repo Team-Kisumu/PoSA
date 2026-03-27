@@ -1,8 +1,9 @@
 // Package storage provides content-addressed storage for evaluation reports.
 //
-// Three backends are supported:
-//   - FilecoinClient: Filecoin storage via go-synapse SDK (production)
-//   - IPFSClient: External IPFS node via HTTP API (development)
+// Backends supported:
+//   - BeryxClient: Filecoin chain access via Beryx (Zondax) authenticated RPC
+//   - FilecoinClient: Filecoin storage via go-synapse SDK (when providers available)
+//   - IPFSClient: External IPFS node via HTTP API (local development)
 //
 // All implement the Store interface for swappable use.
 package storage
@@ -13,12 +14,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"mime/multipart"
 	"net/http"
 	"time"
 
 	"github.com/data-preservation-programs/go-synapse"
+	"github.com/data-preservation-programs/go-synapse/constants"
+	"github.com/data-preservation-programs/go-synapse/spregistry"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	gocid "github.com/ipfs/go-cid"
 )
 
@@ -30,11 +36,115 @@ type Store interface {
 	Retrieve(cid string) ([]byte, error)
 }
 
+// --- Beryx Client (Zondax authenticated Filecoin RPC) ---
+
+// BeryxClient provides authenticated access to the Filecoin network
+// via the Beryx (Zondax) RPC proxy. It wraps go-ethereum's ethclient
+// with Bearer token auth for Beryx's API.
+type BeryxClient struct {
+	ethClient *ethclient.Client
+	rpcClient *rpc.Client
+	chainID   *big.Int
+	ctx       context.Context
+}
+
+// BeryxConfig holds the configuration for connecting to Beryx.
+type BeryxConfig struct {
+	// RPCURL is the Beryx RPC proxy endpoint.
+	// Mainnet: https://api.zondax.ch/fil/node/mainnet/rpc/v1
+	// Calibration: https://api.zondax.ch/fil/node/calibration/rpc/v1
+	RPCURL string
+	// APIToken is the Beryx JWT token for authentication.
+	APIToken string
+}
+
+// NewBeryxClient creates a Filecoin client connected via Beryx RPC.
+// Verifies the connection by fetching the chain ID.
+func NewBeryxClient(cfg BeryxConfig) (*BeryxClient, error) {
+	ctx := context.Background()
+
+	rpcClient, err := rpc.DialOptions(ctx, cfg.RPCURL,
+		rpc.WithHTTPAuth(func(h http.Header) error {
+			h.Set("Authorization", "Bearer "+cfg.APIToken)
+			return nil
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("beryx: failed to connect to RPC: %w", err)
+	}
+
+	ethClient := ethclient.NewClient(rpcClient)
+
+	chainID, err := ethClient.ChainID(ctx)
+	if err != nil {
+		rpcClient.Close()
+		return nil, fmt.Errorf("beryx: failed to get chain ID: %w", err)
+	}
+
+	return &BeryxClient{
+		ethClient: ethClient,
+		rpcClient: rpcClient,
+		chainID:   chainID,
+		ctx:       ctx,
+	}, nil
+}
+
+// ChainID returns the connected Filecoin network's chain ID.
+// 314 = Mainnet, 314159 = Calibration.
+func (c *BeryxClient) ChainID() *big.Int {
+	return c.chainID
+}
+
+// Network returns the go-synapse network identifier based on chain ID.
+func (c *BeryxClient) Network() constants.Network {
+	if c.chainID.Int64() == int64(constants.ChainIDCalibration) {
+		return constants.NetworkCalibration
+	}
+	return constants.NetworkMainnet
+}
+
+// BlockNumber returns the latest block height.
+func (c *BeryxClient) BlockNumber() (uint64, error) {
+	return c.ethClient.BlockNumber(c.ctx)
+}
+
+// EthClient returns the underlying go-ethereum client for direct use.
+func (c *BeryxClient) EthClient() *ethclient.Client {
+	return c.ethClient
+}
+
+// ListProviders queries the on-chain SP Registry for active storage providers.
+func (c *BeryxClient) ListProviders() ([]*spregistry.ProviderInfo, error) {
+	network := c.Network()
+	registryAddr := constants.SPRegistryAddresses[network]
+
+	registry, err := spregistry.NewService(c.ethClient, registryAddr, nil, c.chainID)
+	if err != nil {
+		return nil, fmt.Errorf("beryx: failed to create registry service: %w", err)
+	}
+
+	return registry.GetAllActiveProviders(c.ctx)
+}
+
+// Upload is not directly supported via Beryx RPC (read-only chain access).
+// Returns an error directing the caller to use IPFS or a storage provider.
+func (c *BeryxClient) Upload(report []byte) (string, error) {
+	return "", fmt.Errorf("beryx: upload not supported via RPC — use IPFS or a Filecoin storage provider")
+}
+
+// Retrieve is not directly supported via Beryx RPC.
+func (c *BeryxClient) Retrieve(cid string) ([]byte, error) {
+	return nil, fmt.Errorf("beryx: retrieve not supported via RPC — use IPFS or a Filecoin gateway")
+}
+
+// Close releases the Beryx client resources.
+func (c *BeryxClient) Close() {
+	c.rpcClient.Close()
+}
+
 // --- Filecoin Client (via go-synapse) ---
 
 // FilecoinClient stores data on Filecoin using the go-synapse SDK.
-// It handles file upload to a storage provider and proof set management
-// for on-chain data possession verification.
 type FilecoinClient struct {
 	client *synapse.Client
 	ctx    context.Context
@@ -42,16 +152,12 @@ type FilecoinClient struct {
 
 // FilecoinConfig holds the configuration for connecting to Filecoin.
 type FilecoinConfig struct {
-	// PrivateKeyHex is the hex-encoded ECDSA private key for signing transactions.
 	PrivateKeyHex string
-	// RPCURL is the Filecoin RPC endpoint (e.g. calibration testnet).
-	RPCURL string
-	// ProviderURL is the storage provider's API endpoint.
-	ProviderURL string
+	RPCURL        string
+	ProviderURL   string
 }
 
 // NewFilecoinClient creates a Filecoin storage client using go-synapse.
-// Connects to the Filecoin network and authenticates with the storage provider.
 func NewFilecoinClient(cfg FilecoinConfig) (*FilecoinClient, error) {
 	ctx := context.Background()
 
@@ -73,7 +179,6 @@ func NewFilecoinClient(cfg FilecoinConfig) (*FilecoinClient, error) {
 }
 
 // Upload stores a JSON report on Filecoin via the storage provider.
-// Returns the piece CID as a string.
 func (c *FilecoinClient) Upload(report []byte) (string, error) {
 	storage, err := c.client.Storage()
 	if err != nil {
@@ -99,7 +204,6 @@ func (c *FilecoinClient) Retrieve(cidStr string) ([]byte, error) {
 		return nil, fmt.Errorf("filecoin: failed to get storage manager: %w", err)
 	}
 
-	// Parse the CID string into a go-cid object.
 	pieceCID, err := gocid.Decode(cidStr)
 	if err != nil {
 		return nil, fmt.Errorf("filecoin: invalid CID %q: %w", cidStr, err)
@@ -120,7 +224,6 @@ func (c *FilecoinClient) Close() {
 // --- External IPFS Node Client ---
 
 // IPFSClient communicates with a local IPFS node via its HTTP API.
-// Default endpoint: http://localhost:5001/api/v0
 type IPFSClient struct {
 	APIURL string
 	Client *http.Client
@@ -200,8 +303,8 @@ func (c *IPFSClient) Retrieve(cid string) ([]byte, error) {
 // --- Factory ---
 
 // NewStore creates a Store based on environment configuration.
-// If Filecoin config is complete, uses go-synapse FilecoinClient.
-// Otherwise falls back to local IPFS node.
+// Priority: Filecoin (if private key set) > IPFS (default).
+// Use NewBeryxClient separately for chain queries.
 func NewStore(ipfsURL string, filecoinCfg *FilecoinConfig) (Store, error) {
 	if filecoinCfg != nil && filecoinCfg.PrivateKeyHex != "" {
 		return NewFilecoinClient(*filecoinCfg)
