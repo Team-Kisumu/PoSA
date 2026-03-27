@@ -219,7 +219,9 @@ python evaluator.py
 |---|---|
 | `AI_API_KEY` | API key for the AI evaluation engine |
 | `IPFS_API_URL` | IPFS node URL (local development) |
-| `FILECOIN_TOKEN` | web3.storage API token (Filecoin production storage) |
+| `FILECOIN_RPC_URL` | Filecoin RPC endpoint (calibration or mainnet) |
+| `FILECOIN_PROVIDER_URL` | Storage provider API endpoint |
+| `FILECOIN_PRIVATE_KEY` | Hex-encoded ECDSA private key for Filecoin transactions |
 | `BLOCKCHAIN_RPC` | Flow/NEAR RPC endpoint |
 | `CONTRACT_ADDRESS` | Deployed smart contract address |
 
