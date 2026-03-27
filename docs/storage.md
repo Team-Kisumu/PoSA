@@ -73,9 +73,20 @@ For local development without Filecoin:
 | Variable | Description | Default |
 |---|---|---|
 | `IPFS_API_URL` | Local IPFS node HTTP API URL | `http://localhost:5001` |
-| `FILECOIN_RPC_URL` | Filecoin RPC endpoint | `https://api.calibration.node.glif.io/rpc/v1` |
-| `FILECOIN_PROVIDER_URL` | Storage provider API endpoint | — |
-| `FILECOIN_PRIVATE_KEY` | Hex-encoded ECDSA private key for transactions | — |
+| `FILECOIN_RPC_URL` | Filecoin RPC endpoint (auto-detects network from chain ID) | `https://api.calibration.node.glif.io/rpc/v1` |
+| `FILECOIN_PROVIDER_URL` | Storage provider API endpoint (from SP Registry) | — |
+| `FILECOIN_PRIVATE_KEY` | Hex-encoded ECDSA private key for signing transactions | — |
+
+### RPC Endpoints (public, no auth needed)
+
+| Network | Chain ID | RPC URL |
+|---|---|---|
+| Filecoin Mainnet | 314 | `https://api.node.glif.io/rpc/v1` |
+| Filecoin Calibration | 314159 | `https://api.calibration.node.glif.io/rpc/v1` |
+
+### Network Auto-Detection
+
+go-synapse automatically detects the network from the RPC chain ID and resolves all contract addresses. No manual contract address configuration is needed.
 
 ## Running
 
@@ -122,9 +133,26 @@ export FILECOIN_PRIVATE_KEY=your-test-private-key
 cd backend && go test -tags=integration -v ./storage/
 ```
 
-## Contract Addresses (go-synapse)
+## Contract Addresses (auto-resolved by go-synapse)
 
-| Network | PDPVerifier Contract |
-|---|---|
-| Filecoin Mainnet (314) | `0xBADd0B92C1c71d02E7d520f64c0876538fa2557F` |
-| Filecoin Calibration (314159) | `0x85e366Cf9DD2c0aE37E963d9556F5f4718d6417C` |
+| Contract | Mainnet (314) | Calibration (314159) |
+|---|---|---|
+| PDPVerifier | `0xBADd0B92C1c71d02E7d520f64c0876538fa2557F` | `0x85e366Cf9DD2c0aE37E963d9556F5f4718d6417C` |
+| SP Registry | `0xf55dDbf63F1b55c3F1D4FA7e339a68AB7b64A5eB` | `0x839e5c9988e4e9977d40708d0094103c0839Ac9D` |
+| Payments | `0x23b1e018F08BB982348b15a86ee926eEBf7F4DAa` | `0x09a0fDc2723fAd1A7b8e3e00eE5DF73841df55a0` |
+| FWSS | `0x8408502033C418E1bbC97cE9ac48E5528F371A9f` | `0x02925630df557F957f70E112bA06e50965417CA0` |
+| SessionKeyRegistry | `0x74FD50525A958aF5d484601E252271f9625231aB` | `0x518411c2062E119Aaf7A8B12A2eDf9a939347655` |
+
+### Storage Provider Discovery
+
+Storage providers register on-chain via the SP Registry contract. The go-synapse SDK can query active providers:
+
+```go
+registry, _ := spregistry.NewService(client, registryAddr, nil, chainID)
+providers, _ := registry.GetAllActiveProviders(ctx)
+for _, p := range providers {
+    // p.Products["pdp"].Data.ServiceURL is the provider URL
+}
+```
+
+Note: The Synapse protocol is new. As of the current deployment, no public storage providers are registered on either mainnet or calibration. For development, use the local IPFS backend (`IPFS_API_URL`).
