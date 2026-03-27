@@ -3,6 +3,7 @@
 > **Status:** Full analysis implemented (Phase 2)
 
 The AI engine evaluates user-submitted work using pattern-based analysis:
+
 - **Code analysis:** 25 languages with language-specific + cross-language rules
 - **Writing evaluation:** Quality, structure, and readability scoring for text documents
 
@@ -48,6 +49,7 @@ File Upload → File Type Detection → Code Analyzer / Writing Evaluator → Sc
 ```
 
 The analyzer routes submissions based on file extension:
+
 - 67 code extensions → language-specific + cross-language rules
 - Writing extensions (.md, .txt, .rst, .html, .tex, .adoc) → writing quality checks
 - Unknown extensions → score 0 with suggestion
@@ -206,5 +208,4 @@ PYTHONPATH=. pytest ai/tests/ -v
 
 ## Next Steps
 
-- Future: LLM-based analysis for deeper semantic understanding
 - Future: Plagiarism detection for writing submissions
