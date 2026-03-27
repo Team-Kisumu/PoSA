@@ -50,8 +50,8 @@ if [ -n "$JS_FILES" ] && command -v npx &>/dev/null && [ -f "frontend/node_modul
     echo -e "${GREEN}✓ JS/TS files formatted${NC}"
 fi
 
-# --- Reject .env files ---
-ENV_FILES=$(echo "$STAGED" | grep -E '\.env' || true)
+# --- Reject .env files (allow .env.example) ---
+ENV_FILES=$(echo "$STAGED" | grep -E '\.env$' || true)
 if [ -n "$ENV_FILES" ]; then
     echo -e "${RED}✗ Blocked: .env files must not be committed${NC}"
     echo "$ENV_FILES"
