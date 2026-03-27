@@ -115,79 +115,89 @@ func TestIPFSRetrieveError(t *testing.T) {
 	}
 }
 
-// --- Pinata Client Tests ---
+// --- Filecoin Client Tests (via web3.storage) ---
 
-// TestPinataUpload verifies that the Pinata client uploads a report
+// TestFilecoinUpload verifies that the Filecoin client uploads a report
 // with the correct authorization header and returns the CID.
-func TestPinataUpload(t *testing.T) {
+func TestFilecoinUpload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/pinning/pinFileToIPFS" {
+		if r.URL.Path != "/upload" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		// Verify auth header.
 		auth := r.Header.Get("Authorization")
-		if auth != "Bearer test-jwt-token" {
-			t.Errorf("auth = %q, want Bearer test-jwt-token", auth)
+		if auth != "Bearer test-w3s-token" {
+			t.Errorf("auth = %q, want Bearer test-w3s-token", auth)
+		}
+		// Verify multipart form.
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatalf("failed to parse multipart: %v", err)
+		}
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			t.Fatalf("missing file field: %v", err)
+		}
+		data, _ := io.ReadAll(file)
+		if string(data) != `{"score":92}` {
+			t.Errorf("unexpected body: %s", string(data))
 		}
 		json.NewEncoder(w).Encode(map[string]string{
-			"IpfsHash": "QmPinataTestCID12345678901234567890abcdefgh",
+			"cid": "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
 		})
 	}))
 	defer server.Close()
 
-	client := NewPinataClient(server.URL, "test-jwt-token")
+	client := NewFilecoinClient(server.URL, "", "test-w3s-token")
 	cid, err := client.Upload([]byte(`{"score":92}`))
 	if err != nil {
 		t.Fatalf("Upload failed: %v", err)
 	}
-	if cid != "QmPinataTestCID12345678901234567890abcdefgh" {
+	if cid != "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi" {
 		t.Errorf("cid = %q", cid)
 	}
 }
 
-// TestPinataUploadError verifies error handling for Pinata upload failures.
-func TestPinataUploadError(t *testing.T) {
+// TestFilecoinUploadError verifies error handling for Filecoin upload failures.
+func TestFilecoinUploadError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte("invalid API key"))
+		w.Write([]byte("invalid token"))
 	}))
 	defer server.Close()
 
-	client := NewPinataClient(server.URL, "bad-key")
+	client := NewFilecoinClient(server.URL, "", "bad-token")
 	_, err := client.Upload([]byte(`{"score":92}`))
 	if err == nil {
 		t.Error("expected error for 401 response")
 	}
 }
 
-// TestPinataUploadEmptyCID verifies error handling when Pinata returns an empty hash.
-func TestPinataUploadEmptyCID(t *testing.T) {
+// TestFilecoinUploadEmptyCID verifies error handling when web3.storage returns an empty CID.
+func TestFilecoinUploadEmptyCID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"IpfsHash": ""})
+		json.NewEncoder(w).Encode(map[string]string{"cid": ""})
 	}))
 	defer server.Close()
 
-	client := NewPinataClient(server.URL, "key")
+	client := NewFilecoinClient(server.URL, "", "token")
 	_, err := client.Upload([]byte(`{"score":92}`))
 	if err == nil {
 		t.Error("expected error for empty CID")
 	}
 }
 
-// TestPinataRetrieve verifies that the Pinata client fetches via the gateway.
-// Note: In production this hits gateway.pinata.cloud, but we mock it here.
-func TestPinataRetrieve(t *testing.T) {
-	// The Pinata client uses a hardcoded gateway URL, so we test the
-	// IPFSClient retrieve path instead (same HTTP GET pattern).
-	// For a full Pinata gateway test, we'd need to override the gateway URL.
+// TestFilecoinRetrieve verifies that the Filecoin client fetches via the gateway.
+func TestFilecoinRetrieve(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ipfs/bafyTestCID" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
 		w.Write([]byte(`{"score":92}`))
 	}))
 	defer server.Close()
 
-	// Use IPFS client pointed at the test server to verify retrieve logic.
-	client := NewIPFSClient(server.URL)
-	data, err := client.Retrieve("QmTest")
+	client := NewFilecoinClient("", server.URL, "token")
+	data, err := client.Retrieve("bafyTestCID")
 	if err != nil {
 		t.Fatalf("Retrieve failed: %v", err)
 	}
@@ -196,32 +206,58 @@ func TestPinataRetrieve(t *testing.T) {
 	}
 }
 
-// --- Factory Tests ---
+// TestFilecoinRetrieveError verifies error handling when gateway returns 404.
+func TestFilecoinRetrieveError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("not found"))
+	}))
+	defer server.Close()
 
-// TestNewStoreIPFS verifies the factory returns an IPFS client when no Pinata key is set.
-func TestNewStoreIPFS(t *testing.T) {
-	store := NewStore("http://localhost:5001", "", "")
-	if _, ok := store.(*IPFSClient); !ok {
-		t.Error("expected IPFSClient when no Pinata key")
+	client := NewFilecoinClient("", server.URL, "token")
+	_, err := client.Retrieve("bafyNonExistent")
+	if err == nil {
+		t.Error("expected error for 404 response")
 	}
 }
 
-// TestNewStorePinata verifies the factory returns a Pinata client when a key is provided.
-func TestNewStorePinata(t *testing.T) {
-	store := NewStore("", "https://api.pinata.cloud", "my-jwt-token")
-	if _, ok := store.(*PinataClient); !ok {
-		t.Error("expected PinataClient when Pinata key is set")
+// --- Factory Tests ---
+
+// TestNewStoreIPFS verifies the factory returns an IPFS client when no Filecoin token is set.
+func TestNewStoreIPFS(t *testing.T) {
+	store := NewStore("http://localhost:5001", "", "", "")
+	if _, ok := store.(*IPFSClient); !ok {
+		t.Error("expected IPFSClient when no Filecoin token")
+	}
+}
+
+// TestNewStoreFilecoin verifies the factory returns a Filecoin client when a token is provided.
+func TestNewStoreFilecoin(t *testing.T) {
+	store := NewStore("", "https://api.web3.storage", "", "my-w3s-token")
+	if _, ok := store.(*FilecoinClient); !ok {
+		t.Error("expected FilecoinClient when token is set")
 	}
 }
 
 // TestNewStoreDefaultIPFS verifies the factory uses default IPFS URL when none is provided.
 func TestNewStoreDefaultIPFS(t *testing.T) {
-	store := NewStore("", "", "")
+	store := NewStore("", "", "", "")
 	client, ok := store.(*IPFSClient)
 	if !ok {
 		t.Fatal("expected IPFSClient")
 	}
 	if client.APIURL != "http://localhost:5001" {
 		t.Errorf("APIURL = %q, want http://localhost:5001", client.APIURL)
+	}
+}
+
+// TestNewFilecoinClientDefaults verifies default URLs for the Filecoin client.
+func TestNewFilecoinClientDefaults(t *testing.T) {
+	client := NewFilecoinClient("", "", "token")
+	if client.APIURL != "https://api.web3.storage" {
+		t.Errorf("APIURL = %q, want https://api.web3.storage", client.APIURL)
+	}
+	if client.GatewayURL != "https://w3s.link" {
+		t.Errorf("GatewayURL = %q, want https://w3s.link", client.GatewayURL)
 	}
 }

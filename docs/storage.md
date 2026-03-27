@@ -2,12 +2,12 @@
 
 > **Status:** Implemented (Phase 3)
 
-The storage layer persists AI evaluation reports on IPFS and returns content-addressed CIDs for blockchain anchoring. Supports both a local IPFS node and the Pinata cloud pinning service.
+The storage layer persists AI evaluation reports on IPFS/Filecoin and returns content-addressed CIDs for blockchain anchoring. Supports both a local IPFS node (development) and Filecoin via web3.storage (production).
 
 ## Technology
 
-- **Storage:** IPFS (content-addressed)
-- **Backends:** Local IPFS node (HTTP API) or [Pinata](https://www.pinata.cloud/) (cloud pinning)
+- **Storage:** IPFS (content-addressed) + Filecoin (long-term persistence)
+- **Backends:** Local IPFS node (HTTP API) or [web3.storage](https://web3.storage/) (IPFS pinning + Filecoin deals)
 - **Language:** Go (stdlib `net/http`, no external dependencies)
 - **Package:** `backend/storage/`
 
@@ -15,8 +15,8 @@ The storage layer persists AI evaluation reports on IPFS and returns content-add
 
 ```md
 backend/storage/
-├── ipfs.go          # Store interface, IPFSClient, PinataClient, factory
-└── ipfs_test.go     # 12 tests with HTTP test server mocks
+├── ipfs.go          # Store interface, IPFSClient, FilecoinClient, factory
+└── ipfs_test.go     # 15 tests with HTTP test server mocks
 ```
 
 ## Architecture
@@ -35,26 +35,28 @@ Both backends implement this interface, making them swappable via the factory fu
 ### Backend Selection
 
 ```mmd
-NewStore(ipfsURL, pinataURL, pinataKey)
-  ├── pinataKey set? → PinataClient
-  └── otherwise     → IPFSClient (default: localhost:5001)
+NewStore(ipfsURL, filecoinAPIURL, filecoinGatewayURL, filecoinToken)
+  ├── filecoinToken set? → FilecoinClient (web3.storage)
+  └── otherwise          → IPFSClient (default: localhost:5001)
 ```
 
 ### Upload Flow
 
 ```mmd
-Report JSON → Multipart Form → IPFS/Pinata API → CID returned
+Report JSON → Multipart Form → IPFS/Filecoin API → CID returned
 ```
 
 1. Report bytes are wrapped in a multipart form upload (field: "file", name: "report.json")
 2. Sent to the storage backend via HTTP POST
 3. Backend returns a CID (content hash)
-4. CID is used for blockchain anchoring and verification
+4. CID is passed to the blockchain layer for on-chain anchoring
+
+**Filecoin dual-storage:** When using web3.storage, data is pinned to IPFS immediately for fast retrieval, and a Filecoin storage deal is created asynchronously for long-term persistence.
 
 ### Retrieve Flow
 
 ```mmd
-CID → IPFS cat / Pinata gateway → Report JSON returned
+CID → IPFS cat / w3s.link gateway → Report JSON returned
 ```
 
 ## API Reference (Internal)
@@ -66,39 +68,40 @@ CID → IPFS cat / Pinata gateway → Report JSON returned
 | Upload | `POST /api/v0/add` | Multipart upload, returns `{"Hash": "Qm..."}` |
 | Retrieve | `POST /api/v0/cat?arg={cid}` | Returns raw report bytes |
 
-### PinataClient
+### FilecoinClient (web3.storage)
 
 | Method | Endpoint | Description |
 |---|---|---|
-| Upload | `POST /pinning/pinFileToIPFS` | Multipart upload with Bearer auth, returns `{"IpfsHash": "Qm..."}` |
-| Retrieve | `GET gateway.pinata.cloud/ipfs/{cid}` | Public gateway fetch |
+| Upload | `POST /upload` | Multipart upload with Bearer auth, returns `{"cid": "bafy..."}` |
+| Retrieve | `GET {gateway}/ipfs/{cid}` | Gateway fetch (default: w3s.link) |
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |---|---|---|
 | `IPFS_API_URL` | Local IPFS node HTTP API URL | `http://localhost:5001` |
-| `PINATA_API_URL` | Pinata API base URL | `https://api.pinata.cloud` |
-| `PINATA_API_KEY` | Pinata JWT token (if set, Pinata is used instead of local IPFS) | — |
+| `FILECOIN_API_URL` | web3.storage API base URL | `https://api.web3.storage` |
+| `FILECOIN_GATEWAY_URL` | IPFS/Filecoin gateway for retrieval | `https://w3s.link` |
+| `FILECOIN_TOKEN` | web3.storage API token (if set, Filecoin is used instead of local IPFS) | — |
 
 ## Error Handling
 
 | Error | Cause | Handling |
 |---|---|---|
-| Upload returns non-200 | IPFS node down, Pinata auth failure | Error with status code and body |
-| Empty CID in response | Malformed IPFS/Pinata response | Error: "empty CID in response" |
+| Upload returns non-200 | IPFS node down, auth failure | Error with status code and body |
+| Empty CID in response | Malformed response | Error: "empty CID in response" |
 | Retrieve returns non-200 | CID not found, network error | Error with status code and body |
-| HTTP client timeout | Network issues (30s timeout) | Error wrapping the timeout |
+| HTTP client timeout | Network issues (30s IPFS, 60s Filecoin) | Error wrapping the timeout |
 
 ## Running
 
 ```bash
-# With local IPFS node
+# With local IPFS node (development)
 export IPFS_API_URL=http://localhost:5001
 cd backend && go run main.go
 
-# With Pinata
-export PINATA_API_KEY=your-jwt-token
+# With Filecoin via web3.storage (production)
+export FILECOIN_TOKEN=your-web3storage-token
 cd backend && go run main.go
 ```
 
@@ -106,24 +109,26 @@ cd backend && go run main.go
 
 ```bash
 cd backend && go test -race -v ./storage/
-# 12 tests, ~1s
+# 15 tests, ~1s
 ```
 
-All tests use `httptest.NewServer` to mock IPFS and Pinata APIs — no real IPFS node or Pinata account needed.
+All tests use `httptest.NewServer` to mock both APIs — no real IPFS node or web3.storage account needed.
 
 ### Test Summary
 
 | Test | Verifies |
 |---|---|
-| `TestIPFSUpload` | Multipart upload, CID extraction from response |
+| `TestIPFSUpload` | Multipart upload, CID extraction from Hash field |
 | `TestIPFSUploadError` | Error handling for 500 response |
-| `TestIPFSUploadEmptyCID` | Error handling for empty Hash field |
+| `TestIPFSUploadEmptyCID` | Error handling for empty Hash |
 | `TestIPFSRetrieve` | Fetch by CID, correct query parameter |
 | `TestIPFSRetrieveError` | Error handling for 404 response |
-| `TestPinataUpload` | Auth header, CID extraction from IpfsHash |
-| `TestPinataUploadError` | Error handling for 401 response |
-| `TestPinataUploadEmptyCID` | Error handling for empty IpfsHash |
-| `TestPinataRetrieve` | Gateway fetch pattern |
-| `TestNewStoreIPFS` | Factory returns IPFSClient when no Pinata key |
-| `TestNewStorePinata` | Factory returns PinataClient when key is set |
-| `TestNewStoreDefaultIPFS` | Factory uses default localhost:5001 URL |
+| `TestFilecoinUpload` | Bearer auth header, CID from cid field, multipart body |
+| `TestFilecoinUploadError` | Error handling for 401 response |
+| `TestFilecoinUploadEmptyCID` | Error handling for empty cid |
+| `TestFilecoinRetrieve` | Gateway fetch with correct path |
+| `TestFilecoinRetrieveError` | Error handling for 404 response |
+| `TestNewStoreIPFS` | Factory returns IPFSClient when no Filecoin token |
+| `TestNewStoreFilecoin` | Factory returns FilecoinClient when token is set |
+| `TestNewStoreDefaultIPFS` | Factory uses default localhost:5001 |
+| `TestNewFilecoinClientDefaults` | Default API and gateway URLs |

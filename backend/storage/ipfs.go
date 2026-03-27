@@ -1,6 +1,7 @@
 // Package storage provides content-addressed storage for evaluation reports.
-// It supports two backends: a local IPFS node (HTTP API) and the Pinata
-// cloud pinning service. Both implement the Store interface for swappable use.
+// It supports two backends: a local IPFS node (HTTP API) and Filecoin
+// via the web3.storage API (which pins to IPFS and creates Filecoin deals).
+// Both implement the Store interface for swappable use.
 package storage
 
 import (
@@ -106,92 +107,99 @@ func (c *IPFSClient) Retrieve(cid string) ([]byte, error) {
 	return data, nil
 }
 
-// --- Pinata Cloud Client ---
+// --- Filecoin Client (via web3.storage) ---
 
-// PinataClient communicates with the Pinata IPFS pinning service.
-// Requires a JWT API token for authentication.
-type PinataClient struct {
-	APIURL string
-	APIKey string
-	Client *http.Client
+// FilecoinClient stores data on IPFS + Filecoin via the web3.storage API.
+// Data is pinned to IPFS immediately and backed by Filecoin storage deals
+// for long-term persistence. Requires a web3.storage API token.
+type FilecoinClient struct {
+	APIURL     string
+	GatewayURL string
+	APIToken   string
+	Client     *http.Client
 }
 
-// NewPinataClient creates a client for the Pinata pinning service.
-// apiKey should be a Pinata JWT token.
-func NewPinataClient(apiURL, apiKey string) *PinataClient {
+// NewFilecoinClient creates a client for Filecoin storage via web3.storage.
+// apiToken should be a web3.storage API token.
+func NewFilecoinClient(apiURL, gatewayURL, apiToken string) *FilecoinClient {
 	if apiURL == "" {
-		apiURL = "https://api.pinata.cloud"
+		apiURL = "https://api.web3.storage"
 	}
-	return &PinataClient{
-		APIURL: apiURL,
-		APIKey: apiKey,
-		Client: &http.Client{Timeout: 30 * time.Second},
+	if gatewayURL == "" {
+		gatewayURL = "https://w3s.link"
+	}
+	return &FilecoinClient{
+		APIURL:     apiURL,
+		GatewayURL: gatewayURL,
+		APIToken:   apiToken,
+		Client:     &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
-// Upload pins a JSON report to Pinata and returns the CID.
-// Uses the /pinning/pinFileToIPFS endpoint.
-func (c *PinataClient) Upload(report []byte) (string, error) {
+// Upload stores a JSON report on IPFS + Filecoin via web3.storage.
+// Uses the /upload endpoint. Data is pinned to IPFS immediately and
+// a Filecoin storage deal is created asynchronously for persistence.
+func (c *FilecoinClient) Upload(report []byte) (string, error) {
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 	part, err := writer.CreateFormFile("file", "report.json")
 	if err != nil {
-		return "", fmt.Errorf("pinata: failed to create form file: %w", err)
+		return "", fmt.Errorf("filecoin: failed to create form file: %w", err)
 	}
 	if _, err := part.Write(report); err != nil {
-		return "", fmt.Errorf("pinata: failed to write report: %w", err)
+		return "", fmt.Errorf("filecoin: failed to write report: %w", err)
 	}
 	writer.Close()
 
-	req, err := http.NewRequest(http.MethodPost, c.APIURL+"/pinning/pinFileToIPFS", &buf)
+	req, err := http.NewRequest(http.MethodPost, c.APIURL+"/upload", &buf)
 	if err != nil {
-		return "", fmt.Errorf("pinata: failed to create request: %w", err)
+		return "", fmt.Errorf("filecoin: failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	req.Header.Set("Authorization", "Bearer "+c.APIToken)
 
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("pinata: upload failed: %w", err)
+		return "", fmt.Errorf("filecoin: upload failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("pinata: upload returned status %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("filecoin: upload returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Pinata returns JSON with "IpfsHash" field.
+	// web3.storage returns JSON with a "cid" field.
 	var result struct {
-		IpfsHash string `json:"IpfsHash"`
+		CID string `json:"cid"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("pinata: failed to decode response: %w", err)
+		return "", fmt.Errorf("filecoin: failed to decode response: %w", err)
 	}
-	if result.IpfsHash == "" {
-		return "", fmt.Errorf("pinata: empty CID in response")
+	if result.CID == "" {
+		return "", fmt.Errorf("filecoin: empty CID in response")
 	}
-	return result.IpfsHash, nil
+	return result.CID, nil
 }
 
-// Retrieve fetches a report from the Pinata gateway by CID.
-// Uses the public IPFS gateway at gateway.pinata.cloud.
-func (c *PinataClient) Retrieve(cid string) ([]byte, error) {
-	url := fmt.Sprintf("https://gateway.pinata.cloud/ipfs/%s", cid)
+// Retrieve fetches a report from the IPFS/Filecoin gateway by CID.
+// Uses the w3s.link gateway (or configured gateway URL).
+func (c *FilecoinClient) Retrieve(cid string) ([]byte, error) {
+	url := fmt.Sprintf("%s/ipfs/%s", c.GatewayURL, cid)
 	resp, err := c.Client.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("pinata: retrieve failed: %w", err)
+		return nil, fmt.Errorf("filecoin: retrieve failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("pinata: retrieve returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("filecoin: retrieve returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("pinata: failed to read response: %w", err)
+		return nil, fmt.Errorf("filecoin: failed to read response: %w", err)
 	}
 	return data, nil
 }
@@ -199,10 +207,11 @@ func (c *PinataClient) Retrieve(cid string) ([]byte, error) {
 // --- Factory ---
 
 // NewStore creates a Store based on environment configuration.
-// If pinataKey is non-empty, uses Pinata. Otherwise uses local IPFS.
-func NewStore(ipfsURL, pinataURL, pinataKey string) Store {
-	if pinataKey != "" {
-		return NewPinataClient(pinataURL, pinataKey)
+// If filecoinToken is non-empty, uses Filecoin (via web3.storage).
+// Otherwise uses a local IPFS node.
+func NewStore(ipfsURL, filecoinAPIURL, filecoinGatewayURL, filecoinToken string) Store {
+	if filecoinToken != "" {
+		return NewFilecoinClient(filecoinAPIURL, filecoinGatewayURL, filecoinToken)
 	}
 	if ipfsURL == "" {
 		ipfsURL = "http://localhost:5001"
