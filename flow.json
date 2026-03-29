@@ -1,0 +1,20 @@
+{
+  "contracts": {
+    "ProofOfSkill": "./contracts/ProofOfSkill.cdc"
+  },
+  "networks": {
+    "testnet": "access.devnet.nodes.onflow.org:9000",
+    "mainnet": "access.mainnet.nodes.onflow.org:9000"
+  },
+  "accounts": {
+    "testnet-account": {
+      "address": "${FLOW_ACCOUNT_ADDRESS}",
+      "key": "${FLOW_PRIVATE_KEY}"
+    }
+  },
+  "deployments": {
+    "testnet": {
+      "testnet-account": ["ProofOfSkill"]
+    }
+  }
+}
