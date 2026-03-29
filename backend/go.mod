@@ -6,6 +6,7 @@ require (
 	github.com/data-preservation-programs/go-synapse v0.0.0-20260326143334-8c86c7fc3b17
 	github.com/ethereum/go-ethereum v1.14.12
 	github.com/ipfs/go-cid v0.4.1
+	github.com/multiformats/go-multihash v0.2.3
 )
 
 require (
@@ -43,7 +44,6 @@ require (
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
 	github.com/multiformats/go-multibase v0.2.0 // indirect
-	github.com/multiformats/go-multihash v0.2.3 // indirect
 	github.com/multiformats/go-varint v0.0.7 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
 	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
