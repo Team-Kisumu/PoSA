@@ -31,11 +31,15 @@ export default function UploadForm({ onResult }: Props) {
     e.preventDefault();
     setDragging(false);
     const dropped = e.dataTransfer.files[0];
-    if (dropped) { setFile(dropped); setError(""); }
+    if (dropped) {
+      setFile(dropped);
+      setError("");
+      setResult(null);
+    }
   }, []);
 
   // --- Validation ---
-  const MAX_FILE_SIZE = 10 * 1024 * 1024;
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
   const BLOCKED_EXTENSIONS = [".exe", ".bat", ".cmd", ".sh", ".ps1", ".msi", ".dll", ".so", ".bin"];
 
   const validateFile = (f: File): string | null => {
@@ -67,8 +71,7 @@ export default function UploadForm({ onResult }: Props) {
         if (!file) { setError("Please select a file"); setLoading(false); return; }
         const fileErr = validateFile(file);
         if (fileErr) { setError(fileErr); setLoading(false); return; }
-        filename = file.name;
-        content = await file.text();
+        resp = await submitFile(file);
       } else if (tab === "paste") {
         if (!code.trim()) { setError("Please paste some code"); setLoading(false); return; }
         filename = "pasted-code.txt";
