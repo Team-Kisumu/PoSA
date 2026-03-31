@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from ai.analyzer import analyze
+from ai.repo_analyzer import analyze_repo
 
 app = FastAPI(
     title="PoSA AI Engine",
@@ -52,12 +53,23 @@ class Issue(BaseModel):
     line: int | None = None  # Line number, if applicable.
 
 
+class FileScore(BaseModel):
+    """Per-file score in a repo evaluation."""
+
+    path: str
+    score: int
+    issues: int
+    language: str | None = None
+
+
 class EvaluationResponse(BaseModel):
     """Evaluation result returned to the Go backend."""
 
     score: int = Field(..., ge=0, le=100)
     issues: list[Issue] = []
     suggestions: list[str] = []
+    files_analyzed: int | None = None
+    file_scores: list[FileScore] | None = None
 
 
 # --- Endpoints ---
@@ -93,13 +105,38 @@ def evaluate(req: EvaluationRequest):
             detail="file submission requires non-empty content",
         )
 
-    # Repo submissions are not yet supported for analysis.
-    # Return a placeholder until repo fetching is implemented.
+    # Repo submissions: fetch files from GitHub and analyze.
     if req.submission_type == "repo":
+        try:
+            result = analyze_repo(req.name)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"failed to fetch repository: {e}",
+            )
+
+        issues = [
+            Issue(
+                issue_type=i["issue_type"],
+                message=i["message"],
+                line=i.get("line"),
+            )
+            for i in result["issues"]
+        ]
+        file_scores = [
+            FileScore(**fs) for fs in result.get("file_scores", [])
+        ]
         return EvaluationResponse(
-            score=0,
-            issues=[],
-            suggestions=["Repo analysis not yet implemented — submit file content directly"],
+            score=result["score"],
+            issues=issues,
+            suggestions=result["suggestions"],
+            files_analyzed=result.get("files_analyzed", 0),
+            file_scores=file_scores if file_scores else None,
         )
 
     # Run static analysis on the submitted code.

@@ -25,10 +25,19 @@ export interface EvaluationIssue {
   line: number | null;
 }
 
+export interface FileScore {
+  path: string;
+  score: number;
+  issues: number;
+  language: string | null;
+}
+
 export interface EvaluationResult {
   score: number;
   issues: EvaluationIssue[];
   suggestions: string[];
+  files_analyzed?: number;
+  file_scores?: FileScore[];
 }
 
 export interface MintResult {
@@ -72,6 +81,19 @@ export async function evaluateFile(
     body: JSON.stringify({ submission_type: "file", name, content, mime }),
   });
   if (!resp.ok) throw new Error(`Evaluation failed: ${resp.status}`);
+  return resp.json();
+}
+
+export async function evaluateRepo(repoUrl: string): Promise<EvaluationResult> {
+  const resp = await fetch(`${AI_URL}/evaluate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ submission_type: "repo", name: repoUrl, content: "", mime: "" }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: `Evaluation failed: ${resp.status}` }));
+    throw new Error(err.detail || `Evaluation failed: ${resp.status}`);
+  }
   return resp.json();
 }
 
