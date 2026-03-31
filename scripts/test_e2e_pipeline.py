@@ -18,7 +18,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import httpx  # noqa: E402
 
 BACKEND = os.environ.get("BACKEND_URL", "http://localhost:8080")
-AI_ENGINE = os.environ.get("AI_ENGINE_URL", "http://localhost:8000")
+# LOCAL_AI_URL targets the local FastAPI server, not the remote Impulse API.
+# AI_ENGINE_URL in .env points to Impulse (used by impulse_client.py) and
+# must not be used here — the E2E tests exercise our local AI engine.
+AI_ENGINE = os.environ.get("LOCAL_AI_URL", "http://localhost:8000")
 TIMEOUT = 30
 
 
