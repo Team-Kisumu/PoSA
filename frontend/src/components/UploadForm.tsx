@@ -34,10 +34,25 @@ export default function UploadForm() {
     e.preventDefault();
     setDragging(false);
     const dropped = e.dataTransfer.files[0];
-    if (dropped) setFile(dropped);
+    if (dropped) {
+      setFile(dropped);
+      setError("");
+      setResult(null);
+    }
   }, []);
 
   // --- Validation ---
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+  const BLOCKED_EXTENSIONS = [".exe", ".bat", ".cmd", ".sh", ".ps1", ".msi", ".dll", ".so", ".bin"];
+
+  const validateFile = (f: File): string | null => {
+    if (f.size > MAX_FILE_SIZE) return `File too large (${(f.size / 1024 / 1024).toFixed(1)}MB). Max 10MB.`;
+    if (f.size === 0) return "File is empty";
+    const ext = f.name.includes(".") ? "." + f.name.split(".").pop()?.toLowerCase() : "";
+    if (BLOCKED_EXTENSIONS.includes(ext)) return `File type ${ext} is not allowed`;
+    return null;
+  };
+
   const validateRepo = (url: string): string | null => {
     if (!url.trim()) return "Repository URL is required";
     if (!url.startsWith("https://github.com/")) return "Must be a GitHub HTTPS URL";
@@ -57,6 +72,8 @@ export default function UploadForm() {
 
       if (tab === "upload") {
         if (!file) { setError("Please select a file"); setLoading(false); return; }
+        const fileErr = validateFile(file);
+        if (fileErr) { setError(fileErr); setLoading(false); return; }
         resp = await submitFile(file);
       } else if (tab === "paste") {
         if (!code.trim()) { setError("Please paste some code"); setLoading(false); return; }
