@@ -261,7 +261,7 @@ flow scripts execute contracts/scripts/get_total_minted.cdc --network testnet
 | `FILECOIN_RPC_URL` | Filecoin RPC endpoint (Beryx or Glif) |
 | `FILECOIN_DATA_URL` | Beryx data API URL |
 | `FLOW_ACCESS_NODE` | Flow REST API (public, no auth: `https://rest-testnet.onflow.org`) |
-| `FLOW_ACCOUNT_ADDRESS` | Flow account address (`0xf8a2fcf3389475a1` on testnet) |
+| `FLOW_ACCOUNT_ADDRESS` | Flow account address (`0x***` on testnet) |
 | `FLOW_PRIVATE_KEY` | Flow ECDSA_P256 private key (hex) |
 | `CONTRACT_ADDRESS` | Deployed ProofOfSkill contract address |
 | `LIT_NETWORK` | Lit Protocol network (`naga` for v1 Naga SDK) |
