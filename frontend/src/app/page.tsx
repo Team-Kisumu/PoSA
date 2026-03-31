@@ -29,6 +29,7 @@ export default function Home() {
             <p className="text-xs text-zinc-500">Proof-of-Skill AI</p>
           </div>
           <span className="text-xs text-zinc-400">AI-Verified Work. Blockchain-Trusted Proof.</span>
+          <a href="/verify" className="text-xs text-blue-600 dark:text-blue-400 hover:underline">Verify Credential</a>
         </div>
       </header>
 
