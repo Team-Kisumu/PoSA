@@ -94,7 +94,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: steps.check.outcome == 'success'
         with:
-          node-version: '18'
+          node-version: '22'
 
       - name: Install
         if: steps.check.outcome == 'success'
