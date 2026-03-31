@@ -25,11 +25,13 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Load .env if present.
+# Load .env if present (skip lines with <placeholder> values or comments).
 if [ -f "$ROOT/.env" ]; then
-    set -a
-    source "$ROOT/.env"
-    set +a
+    while IFS= read -r line; do
+        # Skip comments, empty lines, and lines with <placeholder> values.
+        [[ -z "$line" || "$line" == \#* || "$line" == *"<"* ]] && continue
+        export "$line"
+    done < "$ROOT/.env"
     echo -e "${GREEN}Loaded .env${NC}"
 fi
 
