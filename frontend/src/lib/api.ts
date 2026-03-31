@@ -90,3 +90,47 @@ export async function mintProof(
   if (!resp.ok) throw new Error(`Minting failed: ${resp.status}`);
   return resp.json();
 }
+
+// --- Verification ---
+
+export interface VerifyResult {
+  valid: boolean;
+  credential: {
+    id: number;
+    cid: string;
+    score: number;
+    submitter: string;
+    timestamp: number;
+  } | null;
+  report: Record<string, unknown> | null;
+}
+
+export async function verifyCID(cid: string): Promise<VerifyResult> {
+  // Fetch from backend verify endpoint.
+  const resp = await fetch(`${API_URL}/api/verify/${encodeURIComponent(cid)}`);
+  const data: APIResponse = await resp.json();
+
+  if (!data.success) {
+    return { valid: false, credential: null, report: null };
+  }
+
+  // Try to fetch the report from Lighthouse gateway.
+  let report: Record<string, unknown> | null = null;
+  try {
+    const reportResp = await fetch(
+      `https://gateway.lighthouse.storage/ipfs/${cid}`,
+      { signal: AbortSignal.timeout(10000) }
+    );
+    if (reportResp.ok) {
+      report = await reportResp.json();
+    }
+  } catch {
+    // Report fetch failed — credential may still be valid on-chain.
+  }
+
+  return {
+    valid: true,
+    credential: data.data as VerifyResult["credential"],
+    report,
+  };
+}

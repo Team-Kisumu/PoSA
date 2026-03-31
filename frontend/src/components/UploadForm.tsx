@@ -51,8 +51,9 @@ export default function UploadForm({ onResult }: Props) {
 
   const validateRepo = (url: string): string | null => {
     if (!url.trim()) return "Repository URL is required";
-    if (!url.startsWith("https://github.com/")) return "Must be a GitHub HTTPS URL";
-    const parts = url.replace("https://github.com/", "").split("/");
+    const cleaned = url.trim().replace(/\.git$/, "");
+    if (!cleaned.startsWith("https://github.com/")) return "Must be a GitHub HTTPS URL";
+    const parts = cleaned.replace("https://github.com/", "").split("/");
     if (parts.length < 2 || !parts[0] || !parts[1]) return "URL must include owner/repo";
     return null;
   };
@@ -110,7 +111,12 @@ export default function UploadForm({ onResult }: Props) {
         );
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Submission failed");
+      const msg = err instanceof Error ? err.message : "Submission failed";
+      if (msg === "Failed to fetch") {
+        setError("Cannot connect to the backend server. Make sure it is running on " + (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"));
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
