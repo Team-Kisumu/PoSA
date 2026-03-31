@@ -8,6 +8,7 @@ and returns evaluation results (score, issues, suggestions). Supports:
 """
 
 from fastapi import FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from ai.analyzer import analyze
@@ -16,6 +17,14 @@ app = FastAPI(
     title="PoSA AI Engine",
     description="AI evaluation engine for Proof-of-Skill submissions",
     version="0.2.0",
+)
+
+# Allow cross-origin requests from the frontend.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
