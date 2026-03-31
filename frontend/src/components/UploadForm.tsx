@@ -34,7 +34,6 @@ export default function UploadForm({ onResult }: Props) {
     if (dropped) {
       setFile(dropped);
       setError("");
-      setResult(null);
     }
   }, []);
 
@@ -71,7 +70,8 @@ export default function UploadForm({ onResult }: Props) {
         if (!file) { setError("Please select a file"); setLoading(false); return; }
         const fileErr = validateFile(file);
         if (fileErr) { setError(fileErr); setLoading(false); return; }
-        resp = await submitFile(file);
+        filename = file.name;
+        content = await file.text();
       } else if (tab === "paste") {
         if (!code.trim()) { setError("Please paste some code"); setLoading(false); return; }
         filename = "pasted-code.txt";
