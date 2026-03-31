@@ -80,7 +80,7 @@ export default function Home() {
 
       <footer className="border-t border-zinc-200 dark:border-zinc-800 mt-12">
         <div className="max-w-4xl mx-auto px-6 py-4 text-center text-xs text-zinc-400">
-          PoSA © {new Date().getFullYear()} — Impulse AI · Filecoin · Flow
+          PoSA © 2026 — Impulse AI · Filecoin · Flow
         </div>
       </footer>
     </div>

@@ -194,7 +194,7 @@ export default function VerifyPage() {
 
       <footer className="border-t border-zinc-200 dark:border-zinc-800 mt-12">
         <div className="max-w-4xl mx-auto px-6 py-4 text-center text-xs text-zinc-400">
-          PoSA {"\u00A9"} {new Date().getFullYear()} {"\u2014"} Impulse AI {"\u00B7"} Filecoin {"\u00B7"} Flow
+          PoSA © 2026 — Impulse AI · Filecoin · Flow
         </div>
       </footer>
     </div>
