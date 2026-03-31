@@ -8,8 +8,14 @@
   },
   "accounts": {
     "testnet-account": {
-      "address": "${FLOW_ACCOUNT_ADDRESS}",
-      "key": "${FLOW_PRIVATE_KEY}"
+      "address": "0xf8a2fcf3389475a1",
+      "key": {
+        "type": "hex",
+        "index": 0,
+        "signatureAlgorithm": "ECDSA_P256",
+        "hashAlgorithm": "SHA3_256",
+        "privateKey": "${FLOW_PRIVATE_KEY}"
+      }
     }
   },
   "deployments": {
