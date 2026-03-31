@@ -11,13 +11,14 @@ Each component has its own test suite using the idiomatic testing framework for 
 | Backend handlers (Go) | `testing` + `httptest` | 80%+ | 93.2% |
 | Backend validation (Go) | `testing` | 95%+ | 97.0% |
 | Backend middleware (Go) | `testing` + `httptest` | 100% | 100% |
-| Backend storage (Go) | `testing` + `httptest` | 80%+ | 8 unit + 5 integration |
+| Backend storage (Go) | `testing` + `httptest` | 80%+ | 22 unit + 7 integration |
+| Backend blockchain (Go) | `testing` + `httptest` | 80%+ | 9 unit |
 | AI analyzer (Python) | `pytest` | 80%+ | 150 tests |
 | AI Impulse integration | `pytest` + e2e script | — | 3 e2e suites |
+| Smart Contracts (Cadence) | `flow test` | 100% | 10 tests |
 | Frontend (Node) | Jest / Vitest | 70%+ | — |
-| Smart Contracts | Flow Test | 100% | — |
 
-Tests are split into **validator tests** (input validation + content filtering), **type tests** (serialization), **unit tests** (isolated handler logic), **integration tests** (full mux routing + middleware + live API), **analyzer tests** (code + writing + quality rules), **storage tests** (IPFS mocks + Beryx live), and **e2e tests** (full pipeline).
+Tests are split into **validator tests** (input validation + content filtering), **type tests** (serialization), **unit tests** (isolated handler logic), **integration tests** (full mux routing + middleware + live API), **analyzer tests** (code + writing + quality rules), **storage tests** (IPFS + Lighthouse mocks + Beryx/Lighthouse live), **blockchain tests** (Flow contract + Go client), and **e2e tests** (full pipeline).
 
 ## Test Scripts
 
@@ -231,6 +232,39 @@ cd backend && go test -tags=integration -v ./storage/
 ```
 
 Tests live Filecoin RPC connection, chain queries, and SP Registry via Beryx.
+
+### Lighthouse integration tests
+
+```bash
+cd backend && go test -tags=integration -v -run TestLighthouse ./storage/
+```
+
+Tests live upload/retrieve roundtrip against Lighthouse.storage. Requires `LIGHTHOUSE_API_KEY` in `.env`.
+
+### Blockchain tests
+
+```bash
+# Cadence contract tests (require Flow CLI)
+export FLOW_PRIVATE_KEY=your-key
+flow test contracts/ProofOfSkill_test.cdc
+
+# Go blockchain client tests (HTTP mocks, no Flow CLI needed)
+cd backend && go test -race -v ./blockchain/
+```
+
+### Flow testnet live verification
+
+```bash
+export FLOW_PRIVATE_KEY=your-key
+
+# Query contract state
+flow scripts execute contracts/scripts/get_total_minted.cdc --network testnet
+flow scripts execute contracts/scripts/verify_credential.cdc "QmYourCID" --network testnet
+
+# Mint a credential
+flow transactions send contracts/transactions/mint_credential.cdc \
+  "QmCID" 85 0xf8a2fcf3389475a1 --network testnet --signer testnet-account
+```
 
 ## CI Integration
 
