@@ -71,13 +71,13 @@ flowchart TD
 
 ### Components
 
-| Component | Technology | Responsibility |
-|---|---|---|
-| **Frontend** | React / Next.js | Upload interface, displays AI evaluation results |
-| **Backend** | Go | Handles submissions, orchestrates AI → Storage → Blockchain |
-| **AI Engine** | Python | Code analysis, writing evaluation, score + explanation generation |
-| **Storage** | IPFS / Filecoin | Stores evaluation reports, returns CID |
-| **Blockchain** | Flow / NEAR | Stores CID hash, mints proof credential (NFT) |
+| Component | Technology | Responsibility | Status |
+|---|---|---|---|
+| **Frontend** | React / Next.js | Upload interface, displays AI evaluation results | Planned |
+| **Backend** | Go 1.25+ | Handles submissions, orchestrates AI → Storage → Blockchain | Implemented |
+| **AI Engine** | Python + [Impulse AI](https://docs.impulselabs.ai/) | Pattern-based analysis (25 langs) + AI-powered evaluation | Implemented |
+| **Storage** | [Lighthouse.storage](https://docs.lighthouse.storage/) + [Beryx](https://docs.zondax.ch/beryx) | Stores evaluation reports on IPFS/Filecoin, returns CID | Live |
+| **Blockchain** | [Flow](https://developers.flow.com/) (Cadence) | Stores CID hash, mints proof credential | [Deployed on Testnet](https://testnet.flowscan.io/account/0xf8a2fcf3389475a1) |
 
 ---
 
@@ -114,20 +114,29 @@ graph LR
 ```txt
 posa/
 ├── backend/
-│   ├── main.go              # API entrypoint
-│   ├── handlers/            # HTTP route handlers
-│   ├── services/            # Business logic (AI, IPFS, blockchain)
-│   └── blockchain/          # Chain interaction layer
-├── frontend/
-│   ├── src/
-│   └── components/          # UI components
-├── contracts/
-│   └── proof.cdc            # Smart contract (Flow) / proof.rs (NEAR)
+│   ├── main.go              # API entrypoint (:8080)
+│   ├── handlers/            # HTTP route handlers + validation
+│   ├── middleware/           # Security headers, request ID, recovery
+│   ├── validation/           # Input validation (filename, MIME, content, CID)
+│   ├── storage/             # Lighthouse, Beryx, go-synapse, IPFS, CID, cache
+│   ├── blockchain/          # Flow integration (AnchorProof, VerifyProof)
+│   └── services/            # Business logic orchestration
 ├── ai/
-│   └── evaluator.py         # AI evaluation engine
-├── .gitignore
-├── LICENSE
-├── SECURITY.md
+│   ├── evaluator.py         # FastAPI server (:8000)
+│   ├── analyzer.py          # Routes to code or writing evaluator
+│   ├── writing.py           # Writing quality evaluator
+│   ├── impulse_client.py    # Impulse AI SSE streaming client
+│   ├── rules/               # 25 language rule sets + cross-language rules
+│   └── tests/               # 150 pytest tests
+├── contracts/
+│   ├── ProofOfSkill.cdc     # Flow Cadence smart contract (deployed)
+│   ├── transactions/        # Mint credential transaction
+│   ├── scripts/             # Verify credential, get total minted
+│   └── ProofOfSkill_test.cdc # 10 Cadence tests
+├── docs/                    # Component documentation
+├── scripts/                 # Test scripts, git hooks, setup
+├── .env.example             # Environment config template
+├── flow.json                # Flow project config
 └── README.md
 ```
 
@@ -184,46 +193,93 @@ pub contract Proof {
 
 ### Prerequisites
 
-- [Go](https://go.dev/) (1.21+)
-- [Node.js](https://nodejs.org/) (18+)
+- [Go](https://go.dev/) (1.25+)
 - [Python](https://www.python.org/) (3.10+)
-- IPFS node or [web3.storage](https://web3.storage/) API token (Filecoin)
-- Blockchain SDK (Flow CLI / NEAR CLI)
+- [Node.js](https://nodejs.org/) (18+) — for frontend (planned)
+- [Flow CLI](https://github.com/onflow/flow-cli) (v2.15+) — for contract deployment
 
 ### Setup
 
 ```bash
 # Clone the repository
-git clone https://github.com/Murzuqisah/PoSA.git
+git clone https://github.com/Team-Kisumu/PoSA.git
 cd PoSA
 
-# Backend
+# Configure environment
+cp .env.example .env
+# Edit .env with your API keys (see Environment Variables below)
+
+# Install git hooks
+./scripts/setup-hooks.sh
+
+# Backend (terminal 1)
 cd backend
-cp .env.example .env   # configure API keys
 go run main.go
+# -> PoSA backend listening on :8080
 
-# Frontend (new terminal)
-cd frontend
-npm install
-npm run dev
-
-# AI Engine (new terminal)
+# AI Engine (terminal 2)
 cd ai
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-python evaluator.py
+PYTHONPATH=.. python evaluator.py
+# -> Uvicorn running on http://0.0.0.0:8000
+
+# Deploy smart contract (one-time)
+export FLOW_PRIVATE_KEY=<your-key>
+flow project deploy --network testnet
+```
+
+### Running Tests
+
+```bash
+# All backend tests
+cd backend && go test -race ./...
+
+# All AI tests
+source ai/.venv/bin/activate && PYTHONPATH=. pytest ai/tests/ -q
+
+# AI end-to-end (requires AI_API_KEY in .env)
+PYTHONPATH=. python scripts/test_e2e_ai.py
+
+# Storage integration (requires LIGHTHOUSE_API_KEY)
+cd backend && go test -tags=integration -v ./storage/
+
+# Blockchain integration (requires FLOW_PRIVATE_KEY)
+export FLOW_PRIVATE_KEY=<key>
+flow scripts execute contracts/scripts/get_total_minted.cdc --network testnet
 ```
 
 ### Environment Variables
 
 | Variable | Description |
 |---|---|
-| `AI_API_KEY` | API key for the AI evaluation engine |
-| `IPFS_API_URL` | IPFS node URL (local development) |
-| `FILECOIN_RPC_URL` | Filecoin RPC endpoint (calibration or mainnet) |
-| `FILECOIN_PROVIDER_URL` | Storage provider API endpoint |
-| `FILECOIN_PRIVATE_KEY` | Hex-encoded ECDSA private key for Filecoin transactions |
-| `BLOCKCHAIN_RPC` | Flow/NEAR RPC endpoint |
-| `CONTRACT_ADDRESS` | Deployed smart contract address |
+| `AI_API_KEY` | [Impulse AI](https://docs.impulselabs.ai/) API key (x-api-key auth) |
+| `LIGHTHOUSE_API_KEY` | [Lighthouse.storage](https://docs.lighthouse.storage/) API key (primary storage) |
+| `IPFS_API_URL` | Local IPFS node URL (development, default: `http://localhost:5001`) |
+| `BERYX_API_TOKEN` | [Beryx](https://docs.zondax.ch/beryx) JWT token (Filecoin chain queries) |
+| `FILECOIN_RPC_URL` | Filecoin RPC endpoint (Beryx or Glif) |
+| `FILECOIN_DATA_URL` | Beryx data API URL |
+| `FLOW_ACCESS_NODE` | Flow REST API (public, no auth: `https://rest-testnet.onflow.org`) |
+| `FLOW_ACCOUNT_ADDRESS` | Flow account address (`0xf8a2fcf3389475a1` on testnet) |
+| `FLOW_PRIVATE_KEY` | Flow ECDSA_P256 private key (hex) |
+| `CONTRACT_ADDRESS` | Deployed ProofOfSkill contract address |
+| `LIT_NETWORK` | Lit Protocol network (`naga` for v1 Naga SDK) |
+| `LIT_API_KEY` | Lit Protocol API key (planned) |
+
+See [`.env.example`](.env.example) for the full template with inline documentation.
+
+---
+
+## Live Deployments
+
+| Service | Network | Address / URL |
+|---|---|---|
+| ProofOfSkill contract | Flow Testnet | [`0xf8a2fcf3389475a1`](https://testnet.flowscan.io/account/0xf8a2fcf3389475a1) |
+| Lighthouse gateway | IPFS/Filecoin | `https://gateway.lighthouse.storage/ipfs/{cid}` |
+| Beryx RPC | Filecoin Mainnet | `https://api.zondax.ch/fil/node/mainnet/rpc/v1` |
+| Flow REST API | Testnet | `https://rest-testnet.onflow.org/v1` (public, no auth) |
+| Impulse AI | Cloud | `https://api.impulselabs.ai/api/chat` (SSE streaming) |
 
 ---
 
