@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { EvaluationResult, MintResult, FileScore } from "@/lib/api";
+import type { EvaluationResult, MintResult } from "@/lib/api";
 
 interface Props {
   result: EvaluationResult;
