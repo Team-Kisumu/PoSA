@@ -23,10 +23,13 @@ func main() {
 	// Build the middleware chain (outermost runs first):
 	//   Recovery  → catches panics, returns 500 JSON
 	//   RequestID → attaches unique X-Request-ID header
+	//   CORS      → allows cross-origin requests from frontend
 	//   SecurityHeaders → sets defensive HTTP headers
 	chain := middleware.Recovery(
 		middleware.RequestID(
-			middleware.SecurityHeaders(mux),
+			middleware.CORS(
+				middleware.SecurityHeaders(mux),
+			),
 		),
 	)
 
