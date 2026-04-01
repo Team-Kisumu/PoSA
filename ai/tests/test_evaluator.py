@@ -131,19 +131,30 @@ def test_evaluate_unsupported_language(client):
 
 
 def test_evaluate_repo_submission(client):
-    """Repo submissions return a placeholder (not yet implemented)."""
-    payload = {
-        "submission_type": "repo",
-        "name": "https://github.com/user/project",
-        "content": "",
-        "mime": "",
-    }
-    resp = client.post("/evaluate", json=payload)
-    assert resp.status_code == 200
+    """Repo submissions call the repo analyzer and return results."""
+    from unittest.mock import patch
 
-    data = resp.json()
-    assert data["score"] == 0
-    assert any("not yet implemented" in s.lower() for s in data["suggestions"])
+    mock_result = {
+        "score": 80,
+        "issues": [],
+        "suggestions": ["Analyzed 1 files across 1 language(s): go (1)"],
+        "files_analyzed": 1,
+        "file_scores": [{"path": "main.go", "score": 80, "issues": 0, "language": "go"}],
+    }
+    with patch("ai.evaluator.analyze_repo", return_value=mock_result):
+        payload = {
+            "submission_type": "repo",
+            "name": "https://github.com/user/project",
+            "content": "",
+            "mime": "",
+        }
+        resp = client.post("/evaluate", json=payload)
+        assert resp.status_code == 200
+
+        data = resp.json()
+        assert data["score"] == 80
+        assert data["files_analyzed"] == 1
+        assert len(data["file_scores"]) == 1
 
 
 def test_evaluate_file_empty_content(client):
@@ -228,8 +239,9 @@ def test_evaluate_response_structure(client):
     resp = client.post("/evaluate", json=payload)
     data = resp.json()
 
-    # Verify all expected keys are present.
-    assert set(data.keys()) == {"score", "issues", "suggestions"}
+    # Verify all expected keys are present (file_scores and files_analyzed
+    # are nullable and excluded from file submissions when None).
+    assert {"score", "issues", "suggestions"}.issubset(set(data.keys()))
     assert isinstance(data["score"], int)
     assert isinstance(data["issues"], list)
     assert isinstance(data["suggestions"], list)

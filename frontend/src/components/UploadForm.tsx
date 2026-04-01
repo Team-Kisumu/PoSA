@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { submitFile, submitRepo, evaluateFile } from "@/lib/api";
+import { submitFile, submitRepo, evaluateFile, evaluateRepo } from "@/lib/api";
 import type { EvaluationResult } from "@/lib/api";
 
 type Tab = "upload" | "paste" | "repo";
@@ -80,12 +80,20 @@ export default function UploadForm({ onResult }: Props) {
       } else {
         const repoErr = validateRepo(repoUrl);
         if (repoErr) { setError(repoErr); setLoading(false); return; }
-        // For repo submissions, submit to backend and use a placeholder evaluation.
-        await submitRepo(repoUrl);
-        onResult(
-          { score: 0, issues: [], suggestions: ["Repo analysis not yet implemented — submit file content directly"] },
-          repoUrl
-        );
+        // Submit to backend for validation, then evaluate via AI engine.
+        const repoResp = await submitRepo(repoUrl);
+        if (!repoResp.success) {
+          setError(repoResp.error?.message || "Repository rejected by backend");
+          setLoading(false);
+          return;
+        }
+        try {
+          const evaluation = await evaluateRepo(repoUrl);
+          onResult(evaluation, repoUrl);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Repository analysis failed";
+          setError(msg);
+        }
         setLoading(false);
         return;
       }

@@ -70,7 +70,7 @@ jobs:
 
       - name: Flake8 lint
         if: steps.check.outcome == 'success'
-        run: flake8 ai/ --max-line-length=120 --exclude=__pycache__
+        run: flake8 ai/
 
       - name: Mypy type check
         if: steps.check.outcome == 'success'
