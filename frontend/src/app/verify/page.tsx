@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import { verifyCID } from "@/lib/api";
 import type { VerifyResult } from "@/lib/api";
 
@@ -39,18 +40,10 @@ export default function VerifyPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      <header className="border-b border-zinc-200 dark:border-zinc-800">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="group">
-            <h1 className="text-xl font-bold text-black dark:text-white group-hover:text-zinc-600">PoSA</h1>
-            <p className="text-xs text-zinc-500">Proof-of-Skill AI</p>
-          </Link>
-          <span className="text-xs text-zinc-400">Credential Verification</span>
-        </div>
-      </header>
+    <div className="min-h-screen bg-zinc-50 dark:bg-black flex flex-col">
+      <Navbar />
 
-      <main className="max-w-2xl mx-auto px-6 py-12">
+      <main className="flex-1 max-w-2xl mx-auto px-6 py-12 w-full">
         <div className="text-center mb-10">
           <h2 className="text-3xl font-bold text-black dark:text-white mb-3">
             Verify a Credential
@@ -192,11 +185,7 @@ export default function VerifyPage() {
         )}
       </main>
 
-      <footer className="border-t border-zinc-200 dark:border-zinc-800 mt-12">
-        <div className="max-w-4xl mx-auto px-6 py-4 text-center text-xs text-zinc-400">
-          PoSA © 2026 — Impulse AI · Filecoin · Flow
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }

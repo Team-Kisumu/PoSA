@@ -1,0 +1,45 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+export default function Navbar() {
+  const pathname = usePathname();
+
+  const linkClass = (href: string) =>
+    `text-sm font-medium transition-colors ${
+      pathname === href
+        ? "text-black dark:text-white"
+        : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+    }`;
+
+  return (
+    <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-black/80 backdrop-blur-sm sticky top-0 z-50">
+      <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+        <Link href="/" className="group flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-black dark:bg-white flex items-center justify-center">
+            <span className="text-white dark:text-black font-bold text-sm">P</span>
+          </div>
+          <div>
+            <span className="text-lg font-bold text-black dark:text-white group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors">
+              PoSA
+            </span>
+            <span className="hidden sm:inline text-xs text-zinc-400 ml-2">Proof-of-Skill AI</span>
+          </div>
+        </Link>
+        <nav className="flex items-center gap-6">
+          <Link href="/analyze" className={linkClass("/analyze")}>Analyze</Link>
+          <Link href="/verify" className={linkClass("/verify")}>Verify</Link>
+          <a
+            href="https://github.com/Team-Kisumu/PoSA"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 transition-colors"
+          >
+            GitHub
+          </a>
+        </nav>
+      </div>
+    </header>
+  );
+}
