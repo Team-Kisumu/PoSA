@@ -190,20 +190,20 @@ func TestLighthouseDefaults(t *testing.T) {
 
 // --- Factory Tests ---
 
-// TestNewStoreIPFS verifies the factory returns an IPFS client when no Lighthouse or Filecoin config is set.
+// TestNewStoreIPFS verifies the factory returns an IPFS client when no other config is set.
 func TestNewStoreIPFS(t *testing.T) {
-	store, err := NewStore("http://localhost:5001", nil, nil)
+	store, err := NewStore("http://localhost:5001", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
 	}
 	if _, ok := store.(*IPFSClient); !ok {
-		t.Error("expected IPFSClient when no Lighthouse or Filecoin config")
+		t.Error("expected IPFSClient when no other config set")
 	}
 }
 
 // TestNewStoreDefaultIPFS verifies the factory uses default IPFS URL when none is provided.
 func TestNewStoreDefaultIPFS(t *testing.T) {
-	store, err := NewStore("", nil, nil)
+	store, err := NewStore("", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestNewStoreDefaultIPFS(t *testing.T) {
 
 // TestNewStoreLighthouse verifies the factory returns a Lighthouse client when API key is set.
 func TestNewStoreLighthouse(t *testing.T) {
-	store, err := NewStore("", &LighthouseConfig{APIKey: "test-key"}, nil)
+	store, err := NewStore("", &LighthouseConfig{APIKey: "test-key"}, nil, nil)
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
 	}
@@ -227,10 +227,11 @@ func TestNewStoreLighthouse(t *testing.T) {
 	}
 }
 
-// TestNewStoreLighthousePriority verifies Lighthouse takes priority over Filecoin.
+// TestNewStoreLighthousePriority verifies Lighthouse takes priority over Infura and Filecoin.
 func TestNewStoreLighthousePriority(t *testing.T) {
 	store, err := NewStore("",
 		&LighthouseConfig{APIKey: "lh-key"},
+		&InfuraIPFSConfig{ProjectID: "infura-id"},
 		&FilecoinConfig{PrivateKeyHex: "aabbccdd"},
 	)
 	if err != nil {
@@ -238,6 +239,31 @@ func TestNewStoreLighthousePriority(t *testing.T) {
 	}
 	if _, ok := store.(*LighthouseClient); !ok {
 		t.Error("expected LighthouseClient to take priority over FilecoinClient")
+	}
+}
+
+// TestNewStoreInfura verifies the factory returns an Infura client when project ID is set.
+func TestNewStoreInfura(t *testing.T) {
+	store, err := NewStore("", nil, &InfuraIPFSConfig{ProjectID: "test-project"}, nil)
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
+	if _, ok := store.(*InfuraIPFSClient); !ok {
+		t.Error("expected InfuraIPFSClient when project ID is set")
+	}
+}
+
+// TestNewStoreInfuraPriority verifies Infura takes priority over Filecoin but not Lighthouse.
+func TestNewStoreInfuraPriority(t *testing.T) {
+	store, err := NewStore("", nil,
+		&InfuraIPFSConfig{ProjectID: "infura-id"},
+		&FilecoinConfig{PrivateKeyHex: "aabbccdd"},
+	)
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
+	if _, ok := store.(*InfuraIPFSClient); !ok {
+		t.Error("expected InfuraIPFSClient to take priority over FilecoinClient")
 	}
 }
 

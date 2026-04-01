@@ -260,7 +260,9 @@ flow scripts execute contracts/scripts/get_total_minted.cdc --network testnet
 | `BERYX_API_TOKEN` | [Beryx](https://docs.zondax.ch/beryx) JWT token (Filecoin chain queries) |
 | `FILECOIN_RPC_URL` | Filecoin RPC endpoint (Beryx or Glif) |
 | `FILECOIN_DATA_URL` | Beryx data API URL |
-| `FLOW_ACCESS_NODE` | Flow REST API (public, no auth: `https://rest-testnet.onflow.org`) |
+| `INFURA_PROJECT_ID` | [Infura](https://docs.infura.io/) project ID (IPFS Basic Auth username) |
+| `INFURA_API_SECRET` | Infura API secret (IPFS Basic Auth password) |
+| `FLOW_ACCESS_NODE` | Flow REST API (public, no auth: `https://rest-mainnet.onflow.org`) |
 | `FLOW_ACCOUNT_ADDRESS` | Flow account address (`0x***` on testnet) |
 | `FLOW_PRIVATE_KEY` | Flow ECDSA_P256 private key (hex) |
 | `CONTRACT_ADDRESS` | Deployed ProofOfSkill contract address |
@@ -278,7 +280,7 @@ See [`.env.example`](.env.example) for the full template with inline documentati
 | ProofOfSkill contract | Flow Testnet | [`0xf8a2fcf3389475a1`](https://testnet.flowscan.io/account/0xf8a2fcf3389475a1) |
 | Lighthouse gateway | IPFS/Filecoin | `https://gateway.lighthouse.storage/ipfs/{cid}` |
 | Beryx RPC | Filecoin Mainnet | `https://api.zondax.ch/fil/node/mainnet/rpc/v1` |
-| Flow REST API | Testnet | `https://rest-testnet.onflow.org/v1` (public, no auth) |
+| Flow REST API | Mainnet | `https://rest-mainnet.onflow.org/v1` (public, no auth) |
 | Impulse AI | Cloud | `https://api.impulselabs.ai/api/chat` (SSE streaming) |
 
 ---

@@ -2,6 +2,7 @@
 //
 // Backends supported (in priority order):
 //   - LighthouseClient: Lighthouse.storage — stable Filecoin/IPFS pinning service (primary)
+//   - InfuraIPFSClient: Infura — managed IPFS node with Basic Auth (secondary)
 //   - FilecoinClient: go-synapse SDK — native Filecoin PDP storage (fallback, when providers register)
 //   - BeryxClient: Beryx (Zondax) — authenticated Filecoin RPC for chain queries
 //   - IPFSClient: Local IPFS node via HTTP API (development)
@@ -141,6 +142,107 @@ func (c *BeryxClient) Retrieve(cid string) ([]byte, error) {
 // Close releases the Beryx client resources.
 func (c *BeryxClient) Close() {
 	c.rpcClient.Close()
+}
+
+// --- Infura IPFS Client ---
+
+// InfuraIPFSClient stores data on IPFS via Infura's managed IPFS node.
+// Uses Basic Auth with the Infura project ID and API secret.
+// Upload: POST https://ipfs.infura.io:5001/api/v0/add
+// Retrieve: GET https://ipfs.infura.io:5001/api/v0/cat?arg={cid}
+// Gateway: https://{project_id}.ipfs.infura-ipfs.io/ipfs/{cid}
+type InfuraIPFSClient struct {
+	APIURL     string
+	GatewayURL string
+	ProjectID  string
+	APISecret  string
+	Client     *http.Client
+}
+
+// InfuraIPFSConfig holds the configuration for Infura IPFS.
+type InfuraIPFSConfig struct {
+	// ProjectID is the Infura project ID (used as Basic Auth username).
+	ProjectID string
+	// APISecret is the Infura API secret (used as Basic Auth password).
+	// If empty, only the project ID is used for auth.
+	APISecret string
+}
+
+// NewInfuraIPFSClient creates an Infura IPFS storage client.
+func NewInfuraIPFSClient(cfg InfuraIPFSConfig) *InfuraIPFSClient {
+	return &InfuraIPFSClient{
+		APIURL:     "https://ipfs.infura.io:5001",
+		GatewayURL: fmt.Sprintf("https://%s.ipfs.infura-ipfs.io", cfg.ProjectID),
+		ProjectID:  cfg.ProjectID,
+		APISecret:  cfg.APISecret,
+		Client:     &http.Client{Timeout: 60 * time.Second},
+	}
+}
+
+// Upload stores a JSON report on IPFS via Infura.
+// Returns the IPFS CID (content hash).
+func (c *InfuraIPFSClient) Upload(report []byte) (string, error) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("file", "report.json")
+	if err != nil {
+		return "", fmt.Errorf("infura: failed to create form file: %w", err)
+	}
+	if _, err := part.Write(report); err != nil {
+		return "", fmt.Errorf("infura: failed to write report: %w", err)
+	}
+	writer.Close()
+
+	req, err := http.NewRequest(http.MethodPost, c.APIURL+"/api/v0/add", &buf)
+	if err != nil {
+		return "", fmt.Errorf("infura: failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.SetBasicAuth(c.ProjectID, c.APISecret)
+
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("infura: upload failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("infura: upload returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Hash string `json:"Hash"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("infura: failed to decode response: %w", err)
+	}
+	if result.Hash == "" {
+		return "", fmt.Errorf("infura: empty CID in response")
+	}
+	return result.Hash, nil
+}
+
+// Retrieve fetches a report from Infura's IPFS gateway by CID.
+func (c *InfuraIPFSClient) Retrieve(cidStr string) ([]byte, error) {
+	// Try the dedicated gateway first, fall back to the API.
+	url := fmt.Sprintf("%s/ipfs/%s", c.GatewayURL, cidStr)
+	resp, err := c.Client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("infura: retrieve failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("infura: retrieve returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("infura: failed to read response: %w", err)
+	}
+	return data, nil
 }
 
 // --- Lighthouse Client (stable Filecoin/IPFS pinning) ---
@@ -409,11 +511,14 @@ func (c *IPFSClient) Retrieve(cid string) ([]byte, error) {
 // --- Factory ---
 
 // NewStore creates a Store based on environment configuration.
-// Priority: Lighthouse (if API key set) > go-synapse Filecoin (if private key set) > IPFS (default).
+// Priority: Lighthouse > Infura IPFS > go-synapse Filecoin > local IPFS.
 // Use NewBeryxClient separately for chain queries.
-func NewStore(ipfsURL string, lighthouseCfg *LighthouseConfig, filecoinCfg *FilecoinConfig) (Store, error) {
+func NewStore(ipfsURL string, lighthouseCfg *LighthouseConfig, infuraCfg *InfuraIPFSConfig, filecoinCfg *FilecoinConfig) (Store, error) {
 	if lighthouseCfg != nil && lighthouseCfg.APIKey != "" {
 		return NewLighthouseClient(*lighthouseCfg), nil
+	}
+	if infuraCfg != nil && infuraCfg.ProjectID != "" {
+		return NewInfuraIPFSClient(*infuraCfg), nil
 	}
 	if filecoinCfg != nil && filecoinCfg.PrivateKeyHex != "" {
 		return NewFilecoinClient(*filecoinCfg)
