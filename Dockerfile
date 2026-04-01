@@ -3,7 +3,7 @@
 # Multi-stage build producing a single container with:
 #   - Go backend on :8080
 #   - Python AI engine on :8000
-#   - Next.js frontend (static export) served by nginx
+#   - Next.js frontend on :3000
 #   - nginx reverse proxy on :80 routing to all services
 #
 # Build:  docker build -t posa .
@@ -12,7 +12,7 @@
 # ============================================================
 # Stage 1: Build Go backend
 # ============================================================
-FROM golang:1.24-bookworm AS backend-build
+FROM golang:1.25-bookworm AS backend-build
 
 WORKDIR /build
 COPY backend/go.mod backend/go.sum ./
@@ -69,13 +69,13 @@ COPY --from=frontend-build /build/package.json /app/frontend/package.json
 COPY --from=frontend-build /build/node_modules /app/frontend/node_modules
 
 # --- nginx config ---
-COPY docker/nginx.conf /etc/nginx/nginx.conf
+COPY nginx.conf /etc/nginx/nginx.conf
 
 # --- Supervisor config ---
-COPY docker/supervisord.conf /etc/supervisor/conf.d/posa.conf
+COPY supervisord.conf /etc/supervisor/conf.d/posa.conf
 
 # --- Entrypoint ---
-COPY docker/entrypoint.sh /app/entrypoint.sh
+COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 80
