@@ -4,7 +4,7 @@
 #   - Go backend on :8080
 #   - Python AI engine on :8000
 #   - Next.js frontend on :3000
-#   - nginx reverse proxy on :80 routing to all services
+#   - nginx reverse proxy on $PORT (default :80)
 #
 # Build:  docker build -t posa .
 # Run:    docker run -p 80:80 --env-file .env posa
@@ -30,7 +30,6 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY frontend/ ./
 
-# Production env: empty URLs = same-origin relative paths via nginx.
 ENV NEXT_PUBLIC_API_URL=""
 ENV NEXT_PUBLIC_AI_URL=""
 
@@ -41,7 +40,6 @@ RUN npm run build
 # ============================================================
 FROM debian:bookworm-slim AS runtime
 
-# Install nginx, Python 3, and supervisor for process management.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     python3 \
@@ -50,6 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     npm \
     curl \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -68,19 +67,15 @@ COPY --from=frontend-build /build/public /app/frontend/public
 COPY --from=frontend-build /build/package.json /app/frontend/package.json
 COPY --from=frontend-build /build/node_modules /app/frontend/node_modules
 
-# --- nginx config ---
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# --- Supervisor config ---
+# --- Config files ---
+COPY nginx.conf /etc/nginx/nginx.conf.template
 COPY supervisord.conf /etc/supervisor/conf.d/posa.conf
-
-# --- Entrypoint ---
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost/health || exit 1
+    CMD curl -f http://localhost:${PORT:-80}/health || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]
