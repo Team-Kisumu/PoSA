@@ -48,3 +48,4 @@ node_modules/
 .next/
 PR.txt
 frontend/node_modules/
+.env.production

@@ -1,0 +1,28 @@
+.git
+.env
+.env.local
+*.test
+*.out
+coverage.*
+
+# Node
+frontend/node_modules
+frontend/.next
+
+# Python
+ai/.venv
+ai/__pycache__
+ai/tests/__pycache__
+.pytest_cache
+
+# Go
+backend/posa-backend
+
+# IDE
+.vscode
+.idea
+.amazonq
+
+# Docs and scripts not needed in image
+PR.txt
+PoSA_*

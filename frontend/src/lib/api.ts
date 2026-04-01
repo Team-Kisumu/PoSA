@@ -1,7 +1,14 @@
 // API client for the PoSA backend.
+// In development: NEXT_PUBLIC_API_URL=http://localhost:8080, NEXT_PUBLIC_AI_URL=http://localhost:8000
+// In production: both empty — nginx proxies /api/* to backend, /ai/* to AI engine on same origin.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-const AI_URL = process.env.NEXT_PUBLIC_AI_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+const AI_URL = process.env.NEXT_PUBLIC_AI_URL ?? "http://localhost:8000";
+
+// In production (empty URL), rewrite paths for the nginx proxy:
+//   backend: /health, /api/* stay as-is (nginx routes them)
+//   AI engine: /evaluate -> /ai/evaluate (nginx strips /ai prefix)
+const aiPrefix = AI_URL === "" ? "/ai" : AI_URL;
 
 // --- Types ---
 
@@ -75,7 +82,7 @@ export async function evaluateFile(
   content: string,
   mime: string
 ): Promise<EvaluationResult> {
-  const resp = await fetch(`${AI_URL}/evaluate`, {
+  const resp = await fetch(`${aiPrefix}/evaluate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ submission_type: "file", name, content, mime }),
@@ -85,7 +92,7 @@ export async function evaluateFile(
 }
 
 export async function evaluateRepo(repoUrl: string): Promise<EvaluationResult> {
-  const resp = await fetch(`${AI_URL}/evaluate`, {
+  const resp = await fetch(`${aiPrefix}/evaluate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ submission_type: "repo", name: repoUrl, content: "", mime: "" }),
