@@ -4,10 +4,10 @@
 #   - Go backend on :8080
 #   - Python AI engine on :8000
 #   - Next.js frontend on :3000
-#   - nginx reverse proxy on $PORT (default :80)
+#   - nginx reverse proxy on $PORT (default :10000)
 #
 # Build:  docker build -t posa .
-# Run:    docker run -p 80:80 --env-file .env posa
+# Run:    docker run -p 8080:10000 --env-file .env posa
 
 # ============================================================
 # Stage 1: Build Go backend
@@ -50,7 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22 from NodeSource (Debian's default is v18, too old for Next.js 16).
+# Install Node.js 22 from NodeSource (Next.js 16 requires Node >= 20.9.0).
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -71,14 +71,19 @@ COPY --from=frontend-build /build/public /app/frontend/public
 COPY --from=frontend-build /build/package.json /app/frontend/package.json
 COPY --from=frontend-build /build/node_modules /app/frontend/node_modules
 
-# --- Config files ---
-COPY nginx.conf /etc/nginx/nginx.conf.template
+# --- Config and entrypoint ---
+COPY nginx.conf /app/nginx.conf.template
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-EXPOSE 80
+# Make all runtime paths writable for non-root execution (Render requirement).
+RUN mkdir -p /tmp/nginx /app/logs \
+    && chmod -R 777 /tmp/nginx /app/logs /var/log/nginx /var/lib/nginx \
+    && chmod -R 755 /app/backend /app/ai /app/frontend
+
+EXPOSE 10000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-80}/health || exit 1
+    CMD curl -f http://localhost:${PORT:-10000}/health || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]

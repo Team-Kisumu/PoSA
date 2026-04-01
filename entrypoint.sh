@@ -1,14 +1,15 @@
 #!/bin/sh
 # PoSA container entrypoint.
-# Starts all services and waits for any to exit.
+# Starts all services. Works as non-root (Render requirement).
 
 set -e
 
 export PYTHONPATH="/app"
-PORT="${PORT:-80}"
+PORT="${PORT:-10000}"
 
-# Generate nginx config from template with the correct port.
-sed "s/PORT_PLACEHOLDER/${PORT}/g" /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+# Generate nginx config with the correct port in a writable location.
+mkdir -p /tmp/nginx
+sed "s/PORT_PLACEHOLDER/${PORT}/g" /app/nginx.conf.template > /tmp/nginx/nginx.conf
 
 echo "Starting PoSA services..."
 
@@ -22,10 +23,10 @@ echo "Starting PoSA services..."
 cd /app/frontend && node_modules/.bin/next start -p 3000 &
 cd /app
 
-# Start nginx in foreground (keeps container alive).
 echo "  Backend:   :8080"
 echo "  AI Engine: :8000"
 echo "  Frontend:  :3000"
 echo "  nginx:     :${PORT}"
 
-exec nginx -g "daemon off;"
+# Start nginx in foreground with the generated config.
+exec nginx -c /tmp/nginx/nginx.conf -g "daemon off;"
