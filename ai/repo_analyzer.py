@@ -20,9 +20,8 @@ from collections import Counter
 
 import httpx
 
-from ai.analyzer import analyze, detect_language
+from ai.analyzer import analyze
 from ai.rules.patterns import EXTENSION_MAP
-from ai.writing import is_writing_file
 
 GITHUB_API = "https://api.github.com"
 GITHUB_TIMEOUT = 15
@@ -33,14 +32,30 @@ MAX_FILE_SIZE = 100_000  # 100KB per file
 
 # Extensions worth analyzing (code + writing).
 ANALYZABLE_EXTENSIONS = set(EXTENSION_MAP.keys()) | {
-    ".md", ".txt", ".rst", ".html",
+    ".md",
+    ".txt",
+    ".rst",
+    ".html",
 }
 
 # Directories to skip (dependencies, build artifacts, vendored code).
 SKIP_DIRS = {
-    "node_modules", "vendor", ".git", "__pycache__", ".next",
-    "dist", "build", "out", ".venv", "venv", ".tox",
-    "target", "bin", "obj", "packages", "bower_components",
+    "node_modules",
+    "vendor",
+    ".git",
+    "__pycache__",
+    ".next",
+    "dist",
+    "build",
+    "out",
+    ".venv",
+    "venv",
+    ".tox",
+    "target",
+    "bin",
+    "obj",
+    "packages",
+    "bower_components",
 }
 
 
@@ -72,7 +87,7 @@ def parse_repo_url(url: str) -> tuple[str, str]:
     if not url.startswith(prefix):
         raise ValueError(f"not a GitHub URL: {url}")
 
-    path = url[len(prefix):]
+    path = url[len(prefix) :]
     parts = path.split("/")
     if len(parts) < 2 or not parts[0] or not parts[1]:
         raise ValueError(f"URL must include owner/repo: {url}")
@@ -130,7 +145,8 @@ def fetch_repo_files(owner: str, repo: str) -> list[dict]:
 
     # Filter to analyzable files within size limits, skip vendored dirs.
     candidates = [
-        item for item in tree_data.get("tree", [])
+        item
+        for item in tree_data.get("tree", [])
         if item["type"] == "blob"
         and item.get("size", 0) <= MAX_FILE_SIZE
         and item.get("size", 0) > 0
@@ -140,7 +156,7 @@ def fetch_repo_files(owner: str, repo: str) -> list[dict]:
 
     # Prioritize: code files before writing files, smaller files first.
     def sort_key(item):
-        ext = item["path"][item["path"].rfind("."):].lower()
+        ext = item["path"][item["path"].rfind(".") :].lower()
         is_code = ext in EXTENSION_MAP
         return (0 if is_code else 1, item.get("size", 0))
 
@@ -164,11 +180,13 @@ def fetch_repo_files(owner: str, repo: str) -> list[dict]:
             else:
                 content = blob.get("content", "")
             if content.strip():
-                files.append({
-                    "path": item["path"],
-                    "content": content,
-                    "size": item.get("size", len(content)),
-                })
+                files.append(
+                    {
+                        "path": item["path"],
+                        "content": content,
+                        "size": item.get("size", len(content)),
+                    }
+                )
         except Exception:
             continue
 
@@ -214,22 +232,26 @@ def analyze_repo(repo_url: str) -> dict:
 
         # Weight by file size so larger files have more impact on the score.
         weight = max(1, size)
-        file_scores.append({
-            "path": f["path"],
-            "score": score,
-            "issues": len(result["issues"]),
-            "language": result.get("language"),
-        })
+        file_scores.append(
+            {
+                "path": f["path"],
+                "score": score,
+                "issues": len(result["issues"]),
+                "language": result.get("language"),
+            }
+        )
         total_weight += weight
 
         # Prefix issue messages with the file path for context.
         for issue in result["issues"]:
-            all_issues.append({
-                "issue_type": issue["issue_type"],
-                "message": f"[{f['path']}] {issue['message']}",
-                "line": issue.get("line"),
-                "severity": issue.get("severity", "medium"),
-            })
+            all_issues.append(
+                {
+                    "issue_type": issue["issue_type"],
+                    "message": f"[{f['path']}] {issue['message']}",
+                    "line": issue.get("line"),
+                    "severity": issue.get("severity", "medium"),
+                }
+            )
 
         all_suggestions.extend(result.get("suggestions", []))
 
@@ -256,13 +278,9 @@ def analyze_repo(repo_url: str) -> dict:
 
     # Add repo-level summary suggestion.
     if file_scores:
-        lang_counts = Counter(
-            fs["language"] for fs in file_scores if fs.get("language")
-        )
+        lang_counts = Counter(fs["language"] for fs in file_scores if fs.get("language"))
         if lang_counts:
-            langs = ", ".join(
-                f"{lang} ({count})" for lang, count in lang_counts.most_common(5)
-            )
+            langs = ", ".join(f"{lang} ({count})" for lang, count in lang_counts.most_common(5))
             unique_suggestions.insert(
                 0, f"Analyzed {len(file_scores)} files across {len(lang_counts)} language(s): {langs}"
             )

@@ -128,9 +128,7 @@ def evaluate(req: EvaluationRequest):
             )
             for i in result["issues"]
         ]
-        file_scores = [
-            FileScore(**fs) for fs in result.get("file_scores", [])
-        ]
+        file_scores = [FileScore(**fs) for fs in result.get("file_scores", [])]
         return EvaluationResponse(
             score=result["score"],
             issues=issues,

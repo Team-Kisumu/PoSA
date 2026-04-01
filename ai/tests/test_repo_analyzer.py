@@ -14,11 +14,9 @@ from ai.repo_analyzer import (
     _should_skip,
     _is_analyzable,
     analyze_repo,
-    fetch_repo_files,
     MAX_FILES,
     MAX_FILE_SIZE,
 )
-
 
 # --- URL Parsing ---
 
@@ -112,12 +110,14 @@ def _mock_tree_response(files):
     """Build a mock GitHub tree API response."""
     tree = []
     for path, size in files:
-        tree.append({
-            "path": path,
-            "type": "blob",
-            "sha": f"sha_{path.replace('/', '_')}",
-            "size": size,
-        })
+        tree.append(
+            {
+                "path": path,
+                "type": "blob",
+                "sha": f"sha_{path.replace('/', '_')}",
+                "size": size,
+            }
+        )
     return {"tree": tree, "truncated": False}
 
 
@@ -157,6 +157,7 @@ class TestAnalyzeRepo:
     @patch("ai.repo_analyzer.httpx.get")
     def test_analyze_empty_repo(self, mock_get):
         """Repo with no analyzable files returns score 0."""
+
         def side_effect(url, **kwargs):
             resp = MagicMock()
             resp.status_code = 200
@@ -177,7 +178,10 @@ class TestAnalyzeRepo:
     @patch("ai.repo_analyzer.httpx.get")
     def test_analyze_multi_file_repo(self, mock_get):
         """Repo with multiple files aggregates scores correctly."""
-        go_clean = 'package main\n\nimport "net/http"\n\nfunc h(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(200)\n}\n'
+        go_clean = (
+            'package main\n\nimport "net/http"\n\n'
+            "func h(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(200)\n}\n"
+        )
         py_vuln = "import os\n\ndef run(cmd):\n    os.system(cmd)\n"
 
         def side_effect(url, **kwargs):
@@ -187,10 +191,12 @@ class TestAnalyzeRepo:
             if "/git/trees/" not in url and "/git/blobs/" not in url:
                 resp.json.return_value = {"default_branch": "main"}
             elif "/git/trees/" in url:
-                resp.json.return_value = _mock_tree_response([
-                    ("handler.go", 90),
-                    ("script.py", 50),
-                ])
+                resp.json.return_value = _mock_tree_response(
+                    [
+                        ("handler.go", 90),
+                        ("script.py", 50),
+                    ]
+                )
             elif "sha_handler.go" in url:
                 resp.json.return_value = _mock_blob_response(go_clean)
             elif "sha_script.py" in url:
@@ -219,11 +225,13 @@ class TestAnalyzeRepo:
             if "/git/trees/" not in url and "/git/blobs/" not in url:
                 resp.json.return_value = {"default_branch": "main"}
             elif "/git/trees/" in url:
-                resp.json.return_value = _mock_tree_response([
-                    ("main.go", 30),
-                    ("vendor/dep/dep.go", 30),
-                    ("node_modules/pkg/index.js", 50),
-                ])
+                resp.json.return_value = _mock_tree_response(
+                    [
+                        ("main.go", 30),
+                        ("vendor/dep/dep.go", 30),
+                        ("node_modules/pkg/index.js", 50),
+                    ]
+                )
             elif "/git/blobs/" in url:
                 resp.json.return_value = _mock_blob_response(go_code)
             return resp
@@ -246,10 +254,12 @@ class TestAnalyzeRepo:
             if "/git/trees/" not in url and "/git/blobs/" not in url:
                 resp.json.return_value = {"default_branch": "main"}
             elif "/git/trees/" in url:
-                resp.json.return_value = _mock_tree_response([
-                    ("small.go", 30),
-                    ("huge.go", MAX_FILE_SIZE + 1),
-                ])
+                resp.json.return_value = _mock_tree_response(
+                    [
+                        ("small.go", 30),
+                        ("huge.go", MAX_FILE_SIZE + 1),
+                    ]
+                )
             elif "/git/blobs/" in url:
                 resp.json.return_value = _mock_blob_response(go_code)
             return resp
@@ -263,6 +273,7 @@ class TestAnalyzeRepo:
     @patch("ai.repo_analyzer.httpx.get")
     def test_repo_not_found(self, mock_get):
         """404 from GitHub raises ValueError."""
+
         def side_effect(url, **kwargs):
             resp = MagicMock()
             resp.status_code = 404
@@ -276,6 +287,7 @@ class TestAnalyzeRepo:
     @patch("ai.repo_analyzer.httpx.get")
     def test_rate_limit_error(self, mock_get):
         """403 from GitHub raises ValueError about rate limit."""
+
         def side_effect(url, **kwargs):
             resp = MagicMock()
             resp.status_code = 403
@@ -364,6 +376,7 @@ class TestEvaluatorRepoEndpoint:
     def client(self):
         from fastapi.testclient import TestClient
         from ai.evaluator import app
+
         return TestClient(app)
 
     @patch("ai.evaluator.analyze_repo")
@@ -371,9 +384,7 @@ class TestEvaluatorRepoEndpoint:
         """Repo submission returns aggregated results."""
         mock_analyze.return_value = {
             "score": 75,
-            "issues": [
-                {"issue_type": "security", "message": "[main.go] exec.Command", "line": 5}
-            ],
+            "issues": [{"issue_type": "security", "message": "[main.go] exec.Command", "line": 5}],
             "suggestions": ["Security issues detected"],
             "files_analyzed": 3,
             "file_scores": [
@@ -383,12 +394,15 @@ class TestEvaluatorRepoEndpoint:
             ],
         }
 
-        resp = client.post("/evaluate", json={
-            "submission_type": "repo",
-            "name": "https://github.com/test/repo",
-            "content": "",
-            "mime": "",
-        })
+        resp = client.post(
+            "/evaluate",
+            json={
+                "submission_type": "repo",
+                "name": "https://github.com/test/repo",
+                "content": "",
+                "mime": "",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["score"] == 75
@@ -401,12 +415,15 @@ class TestEvaluatorRepoEndpoint:
         """Invalid repo URL returns 400."""
         mock_analyze.side_effect = ValueError("repository not found: bad/repo")
 
-        resp = client.post("/evaluate", json={
-            "submission_type": "repo",
-            "name": "https://github.com/bad/repo",
-            "content": "",
-            "mime": "",
-        })
+        resp = client.post(
+            "/evaluate",
+            json={
+                "submission_type": "repo",
+                "name": "https://github.com/bad/repo",
+                "content": "",
+                "mime": "",
+            },
+        )
         assert resp.status_code == 400
         assert "not found" in resp.json()["detail"]
 
@@ -415,11 +432,14 @@ class TestEvaluatorRepoEndpoint:
         """Network failure returns 502."""
         mock_analyze.side_effect = Exception("connection timeout")
 
-        resp = client.post("/evaluate", json={
-            "submission_type": "repo",
-            "name": "https://github.com/test/repo",
-            "content": "",
-            "mime": "",
-        })
+        resp = client.post(
+            "/evaluate",
+            json={
+                "submission_type": "repo",
+                "name": "https://github.com/test/repo",
+                "content": "",
+                "mime": "",
+            },
+        )
         assert resp.status_code == 502
         assert "failed to fetch" in resp.json()["detail"]

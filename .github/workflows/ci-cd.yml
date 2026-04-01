@@ -79,11 +79,11 @@ jobs:
         if: steps.check.outcome == 'success'
         run: |
           pip install flake8
-          flake8 ai/ --max-line-length=120 --exclude=__pycache__
+          flake8 ai/
 
       - name: Test
         if: steps.check.outcome == 'success'
-        run: cd ai && pytest --tb=short -q
+        run: PYTHONPATH=. pytest ai/tests/ --tb=short -q
 
       - name: Skip notice
         if: steps.check.outcome != 'success'
