@@ -48,7 +48,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     npm \
     curl \
-    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -69,7 +68,6 @@ COPY --from=frontend-build /build/node_modules /app/frontend/node_modules
 
 # --- Config files ---
 COPY nginx.conf /etc/nginx/nginx.conf.template
-COPY supervisord.conf /etc/supervisor/conf.d/posa.conf
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
