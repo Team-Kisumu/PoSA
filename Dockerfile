@@ -38,24 +38,18 @@ RUN npm run build
 # ============================================================
 # Stage 3: Production runtime
 # ============================================================
-FROM debian:bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     python3 \
-    python3-pip \
     python3-venv \
     curl \
     ca-certificates \
-    gnupg \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Node.js 22 from NodeSource (Next.js 16 requires Node >= 20.9.0).
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
 
 # --- Go backend binary ---
 COPY --from=backend-build /posa-backend /app/backend/posa-backend
@@ -76,10 +70,10 @@ COPY nginx.conf /app/nginx.conf.template
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-# Make all runtime paths writable for non-root execution (Render requirement).
+# Make runtime write paths available for arbitrary non-root execution.
 RUN mkdir -p /tmp/nginx /app/logs \
     && chmod -R 777 /tmp/nginx /app/logs /var/log/nginx /var/lib/nginx \
-    && chmod -R 755 /app/backend /app/ai /app/frontend
+    && chmod 755 /app/backend/posa-backend /app/entrypoint.sh
 
 EXPOSE 10000
 
