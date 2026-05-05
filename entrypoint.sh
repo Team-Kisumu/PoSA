@@ -10,6 +10,7 @@ PORT="${PORT:-10000}"
 # Generate nginx config with the correct port in a writable location.
 mkdir -p /tmp/nginx
 sed "s/PORT_PLACEHOLDER/${PORT}/g" /app/nginx.conf.template > /tmp/nginx/nginx.conf
+nginx -t -c /tmp/nginx/nginx.conf
 
 echo "Starting PoSA services..."
 
