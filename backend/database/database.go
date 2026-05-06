@@ -1,5 +1,6 @@
-// Package database provides SQLite persistence for users, sessions, and submissions.
-// Tables are auto-created on startup if they don't exist (zero-config migrations).
+// Package database provides PostgreSQL persistence for users, sessions, and submissions.
+// Connects to Supabase PostgreSQL via SUPABASE_DB_URL.
+// Tables are auto-created on startup if they don't exist.
 package database
 
 import (
@@ -10,11 +11,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // sessionSecret is the HMAC key for signing session tokens.
@@ -63,33 +63,35 @@ type Submission struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// Open connects to the SQLite database at the given path and runs migrations.
-// If DATABASE_URL env var is set, it overrides the path argument.
-// Creates the directory and file if they don't exist.
+// Open connects to PostgreSQL using SUPABASE_DB_URL and runs migrations.
+// Falls back to DATABASE_URL if SUPABASE_DB_URL is not set.
 func Open(path string) (*DB, error) {
-	if envPath := os.Getenv("DATABASE_URL"); envPath != "" {
-		path = envPath
+	dsn := os.Getenv("SUPABASE_DB_URL")
+	if dsn == "" {
+		dsn = os.Getenv("DATABASE_URL")
 	}
-	if path == "" {
-		path = "./data/posa.db"
+	if dsn == "" {
+		dsn = path
 	}
-
-	// Ensure the directory exists.
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("database: failed to create directory %s: %w", dir, err)
+	if dsn == "" {
+		return nil, fmt.Errorf("database: SUPABASE_DB_URL or DATABASE_URL must be set")
 	}
 
-	conn, err := sql.Open("sqlite", path)
+	conn, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("database: failed to open %s: %w", path, err)
+		return nil, fmt.Errorf("database: failed to open connection: %w", err)
 	}
 
-	// Enable WAL mode for better concurrent read performance.
-	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	// Verify connection.
+	if err := conn.Ping(); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("database: failed to set WAL mode: %w", err)
+		return nil, fmt.Errorf("database: failed to ping: %w", err)
 	}
+
+	// Connection pool settings.
+	conn.SetMaxOpenConns(10)
+	conn.SetMaxIdleConns(5)
+	conn.SetConnMaxLifetime(5 * time.Minute)
 
 	db := &DB{conn: conn}
 	if err := db.migrate(); err != nil {
@@ -109,33 +111,33 @@ func (db *DB) Close() error {
 func (db *DB) migrate() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS users (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		github_id INTEGER UNIQUE NOT NULL,
+		id BIGSERIAL PRIMARY KEY,
+		github_id BIGINT UNIQUE NOT NULL,
 		username TEXT NOT NULL,
 		avatar_url TEXT DEFAULT '',
 		email TEXT DEFAULT '',
 		role TEXT DEFAULT 'user',
-		created_at TEXT DEFAULT (datetime('now')),
-		updated_at TEXT DEFAULT (datetime('now'))
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW()
 	);
 
 	CREATE TABLE IF NOT EXISTS sessions (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		user_id INTEGER NOT NULL REFERENCES users(id),
+		id BIGSERIAL PRIMARY KEY,
+		user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 		token_hash TEXT UNIQUE NOT NULL,
-		expires_at TEXT NOT NULL,
-		created_at TEXT DEFAULT (datetime('now'))
+		expires_at TIMESTAMPTZ NOT NULL,
+		created_at TIMESTAMPTZ DEFAULT NOW()
 	);
 
 	CREATE TABLE IF NOT EXISTS submissions (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		user_id INTEGER NOT NULL REFERENCES users(id),
+		id BIGSERIAL PRIMARY KEY,
+		user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 		type TEXT NOT NULL,
 		name TEXT NOT NULL,
 		score INTEGER DEFAULT 0,
 		cid TEXT DEFAULT '',
 		tx_hash TEXT DEFAULT '',
-		created_at TEXT DEFAULT (datetime('now'))
+		created_at TIMESTAMPTZ DEFAULT NOW()
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash);
@@ -155,12 +157,12 @@ func (db *DB) migrate() error {
 func (db *DB) CreateUser(githubID int64, username, avatarURL, email string) (*User, error) {
 	_, err := db.conn.Exec(`
 		INSERT INTO users (github_id, username, avatar_url, email)
-		VALUES (?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT(github_id) DO UPDATE SET
-			username = excluded.username,
-			avatar_url = excluded.avatar_url,
-			email = excluded.email,
-			updated_at = datetime('now')
+			username = EXCLUDED.username,
+			avatar_url = EXCLUDED.avatar_url,
+			email = EXCLUDED.email,
+			updated_at = NOW()
 	`, githubID, username, avatarURL, email)
 	if err != nil {
 		return nil, fmt.Errorf("database: create user failed: %w", err)
@@ -173,7 +175,7 @@ func (db *DB) GetUserByID(id int64) (*User, error) {
 	var u User
 	err := db.conn.QueryRow(`
 		SELECT id, github_id, username, avatar_url, email, role, created_at, updated_at
-		FROM users WHERE id = ?
+		FROM users WHERE id = $1
 	`, id).Scan(&u.ID, &u.GitHubID, &u.Username, &u.AvatarURL, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -189,7 +191,7 @@ func (db *DB) GetUserByGitHubID(githubID int64) (*User, error) {
 	var u User
 	err := db.conn.QueryRow(`
 		SELECT id, github_id, username, avatar_url, email, role, created_at, updated_at
-		FROM users WHERE github_id = ?
+		FROM users WHERE github_id = $1
 	`, githubID).Scan(&u.ID, &u.GitHubID, &u.Username, &u.AvatarURL, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -204,7 +206,7 @@ func (db *DB) GetUserByGitHubID(githubID int64) (*User, error) {
 func (db *DB) ListUsers(limit, offset int) ([]*User, error) {
 	rows, err := db.conn.Query(`
 		SELECT id, github_id, username, avatar_url, email, role, created_at, updated_at
-		FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?
+		FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2
 	`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("database: list users failed: %w", err)
@@ -224,7 +226,7 @@ func (db *DB) ListUsers(limit, offset int) ([]*User, error) {
 
 // UpdateUserRole sets a user's role (e.g. "admin" or "user").
 func (db *DB) UpdateUserRole(id int64, role string) error {
-	_, err := db.conn.Exec(`UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?`, role, id)
+	_, err := db.conn.Exec(`UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2`, role, id)
 	return err
 }
 
@@ -242,10 +244,10 @@ func (db *DB) CountUsers() (int64, error) {
 func (db *DB) CreateSession(userID int64, duration time.Duration) (string, error) {
 	token := generateSessionToken()
 	hash := hashToken(token)
-	expiresAt := time.Now().Add(duration).UTC().Format(time.RFC3339)
+	expiresAt := time.Now().Add(duration).UTC()
 
 	_, err := db.conn.Exec(`
-		INSERT INTO sessions (user_id, token_hash, expires_at) VALUES (?, ?, ?)
+		INSERT INTO sessions (user_id, token_hash, expires_at) VALUES ($1, $2, $3)
 	`, userID, hash, expiresAt)
 	if err != nil {
 		return "", fmt.Errorf("database: create session failed: %w", err)
@@ -263,9 +265,9 @@ func (db *DB) GetSession(token string) (*User, error) {
 	hash := hashToken(token)
 
 	var userID int64
-	var expiresAt string
+	var expiresAt time.Time
 	err := db.conn.QueryRow(`
-		SELECT user_id, expires_at FROM sessions WHERE token_hash = ?
+		SELECT user_id, expires_at FROM sessions WHERE token_hash = $1
 	`, hash).Scan(&userID, &expiresAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -275,9 +277,8 @@ func (db *DB) GetSession(token string) (*User, error) {
 	}
 
 	// Check expiry.
-	expiry, _ := time.Parse(time.RFC3339, expiresAt)
-	if time.Now().After(expiry) {
-		db.conn.Exec(`DELETE FROM sessions WHERE token_hash = ?`, hash)
+	if time.Now().After(expiresAt) {
+		db.conn.Exec(`DELETE FROM sessions WHERE token_hash = $1`, hash)
 		return nil, nil
 	}
 
@@ -287,19 +288,19 @@ func (db *DB) GetSession(token string) (*User, error) {
 // DeleteSession removes a session by its raw token.
 func (db *DB) DeleteSession(token string) error {
 	hash := hashToken(token)
-	_, err := db.conn.Exec(`DELETE FROM sessions WHERE token_hash = ?`, hash)
+	_, err := db.conn.Exec(`DELETE FROM sessions WHERE token_hash = $1`, hash)
 	return err
 }
 
 // DeleteUserSessions removes all sessions for a user (logout everywhere).
 func (db *DB) DeleteUserSessions(userID int64) error {
-	_, err := db.conn.Exec(`DELETE FROM sessions WHERE user_id = ?`, userID)
+	_, err := db.conn.Exec(`DELETE FROM sessions WHERE user_id = $1`, userID)
 	return err
 }
 
 // CleanExpiredSessions removes all expired sessions.
 func (db *DB) CleanExpiredSessions() error {
-	_, err := db.conn.Exec(`DELETE FROM sessions WHERE expires_at < datetime('now')`)
+	_, err := db.conn.Exec(`DELETE FROM sessions WHERE expires_at < NOW()`)
 	return err
 }
 
@@ -307,13 +308,14 @@ func (db *DB) CleanExpiredSessions() error {
 
 // CreateSubmission records a new submission.
 func (db *DB) CreateSubmission(userID int64, subType, name string, score int, cid, txHash string) (*Submission, error) {
-	result, err := db.conn.Exec(`
-		INSERT INTO submissions (user_id, type, name, score, cid, tx_hash) VALUES (?, ?, ?, ?, ?, ?)
-	`, userID, subType, name, score, cid, txHash)
+	var id int64
+	err := db.conn.QueryRow(`
+		INSERT INTO submissions (user_id, type, name, score, cid, tx_hash)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+	`, userID, subType, name, score, cid, txHash).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("database: create submission failed: %w", err)
 	}
-	id, _ := result.LastInsertId()
 	return db.GetSubmissionByID(id)
 }
 
@@ -322,7 +324,7 @@ func (db *DB) GetSubmissionByID(id int64) (*Submission, error) {
 	var s Submission
 	err := db.conn.QueryRow(`
 		SELECT id, user_id, type, name, score, cid, tx_hash, created_at
-		FROM submissions WHERE id = ?
+		FROM submissions WHERE id = $1
 	`, id).Scan(&s.ID, &s.UserID, &s.Type, &s.Name, &s.Score, &s.CID, &s.TxHash, &s.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -340,12 +342,12 @@ func (db *DB) ListSubmissions(userID int64, limit, offset int) ([]*Submission, e
 	if userID > 0 {
 		rows, err = db.conn.Query(`
 			SELECT id, user_id, type, name, score, cid, tx_hash, created_at
-			FROM submissions WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
+			FROM submissions WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 		`, userID, limit, offset)
 	} else {
 		rows, err = db.conn.Query(`
 			SELECT id, user_id, type, name, score, cid, tx_hash, created_at
-			FROM submissions ORDER BY created_at DESC LIMIT ? OFFSET ?
+			FROM submissions ORDER BY created_at DESC LIMIT $1 OFFSET $2
 		`, limit, offset)
 	}
 	if err != nil {
@@ -369,7 +371,7 @@ func (db *DB) CountSubmissions(userID int64) (int64, error) {
 	var count int64
 	var err error
 	if userID > 0 {
-		err = db.conn.QueryRow(`SELECT COUNT(*) FROM submissions WHERE user_id = ?`, userID).Scan(&count)
+		err = db.conn.QueryRow(`SELECT COUNT(*) FROM submissions WHERE user_id = $1`, userID).Scan(&count)
 	} else {
 		err = db.conn.QueryRow(`SELECT COUNT(*) FROM submissions`).Scan(&count)
 	}
