@@ -138,6 +138,39 @@ export async function mintProof(
 
 // --- Verification ---
 
+export interface UserProfile {
+  id: number;
+  github_id: number;
+  username: string;
+  avatar_url: string;
+  email: string;
+  role: string;
+}
+
+export async function getMe(): Promise<UserProfile | null> {
+  try {
+    const resp = await fetch(`${API_URL}/auth/me`, { credentials: "include" });
+    if (!resp.ok) return null;
+    const data: APIResponse<UserProfile> = await resp.json();
+    return data.success ? (data.data as UserProfile) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getLoginUrl(): string {
+  return `${API_URL}/auth/github`;
+}
+
+export async function logout(): Promise<void> {
+  await fetch(`${API_URL}/auth/logout`, {
+    method: "POST",
+    headers: { "X-CSRF-Token": getCsrfToken() },
+    credentials: "include",
+  });
+}
+
+
 export interface VerifyResult {
   valid: boolean;
   credential: {

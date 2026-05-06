@@ -2,9 +2,23 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { getMe, getLoginUrl, logout } from "@/lib/api";
+import type { UserProfile } from "@/lib/api";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const [user, setUser] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    getMe().then(setUser);
+  }, []);
+
+  const handleLogout = async () => {
+    await logout();
+    setUser(null);
+    window.location.href = "/";
+  };
 
   const linkClass = (href: string) =>
     `text-sm font-medium transition-colors ${
@@ -38,6 +52,21 @@ export default function Navbar() {
           >
             GitHub
           </a>
+          {user ? (
+            <div className="flex items-center gap-3">
+              <img src={user.avatar_url} alt={user.username} className="w-7 h-7 rounded-full" />
+              <button onClick={handleLogout} className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 transition-colors">
+                Logout
+              </button>
+            </div>
+          ) : (
+            <a
+              href={getLoginUrl()}
+              className="text-sm font-medium text-white bg-black dark:bg-white dark:text-black px-3 py-1.5 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
+            >
+              Sign in
+            </a>
+          )}
         </nav>
       </div>
     </header>
