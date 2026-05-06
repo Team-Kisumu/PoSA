@@ -11,17 +11,35 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/Murzuqisah/PoSA/auth"
+	"github.com/Murzuqisah/PoSA/database"
 	"github.com/Murzuqisah/PoSA/handlers"
 	"github.com/Murzuqisah/PoSA/middleware"
 )
 
 func main() {
+	// Initialize database.
+	db, err := database.Open("")
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	// Initialize auth handler.
+	authHandler := auth.NewHandler(db)
+
 	mux := http.NewServeMux()
 
-	// Register API routes using Go 1.22+ method-pattern syntax.
+	// API routes.
 	mux.HandleFunc("GET /health", handlers.Health)
 	mux.HandleFunc("POST /api/submit", handlers.Submit)
 	mux.HandleFunc("GET /api/verify/{cid}", handlers.Verify)
+
+	// Auth routes.
+	mux.HandleFunc("GET /auth/github", authHandler.GitHubLogin)
+	mux.HandleFunc("GET /auth/github/callback", authHandler.GitHubCallback)
+	mux.HandleFunc("GET /auth/me", authHandler.Me)
+	mux.HandleFunc("POST /auth/logout", authHandler.Logout)
 
 	// In production, proxy /ai/* to the Python AI engine and /* to Next.js.
 	if os.Getenv("RENDER") == "true" || os.Getenv("DOCKER") == "true" {
@@ -36,7 +54,9 @@ func main() {
 		middleware.RequestID(
 			middleware.CORS(
 				middleware.SecurityHeaders(
-					middleware.CSRF(mux),
+					authHandler.AuthMiddleware(
+						middleware.CSRF(mux),
+					),
 				),
 			),
 		),
