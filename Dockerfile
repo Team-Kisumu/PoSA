@@ -15,7 +15,7 @@ WORKDIR /build
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-RUN CGO_ENABLED=0 GOOS=linux go build -o /posa-backend .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /posa-backend .
 
 # ============================================================
 # Stage 2: Build Next.js frontend
@@ -70,7 +70,7 @@ COPY nginx.conf /app/nginx.conf.template
 
 # --- Start script (created inline to avoid line-ending issues) ---
 RUN printf '#!/bin/sh\n\
-set -e\n\
+set -ex\n\
 export PYTHONPATH=/app\n\
 PORT="${PORT:-10000}"\n\
 mkdir -p /tmp/nginx\n\
