@@ -64,10 +64,14 @@ COPY --from=frontend-build /build/public /app/frontend/public
 COPY --from=frontend-build /build/package.json /app/frontend/package.json
 COPY --from=frontend-build /build/node_modules /app/frontend/node_modules
 
+# --- SQLite data directory ---
+RUN mkdir -p /app/data && chmod 777 /app/data
+
 # Create start script inline.
 RUN printf '#!/bin/sh\n\
 export PYTHONPATH=/app\n\
 export RENDER=true\n\
+mkdir -p /app/data\n\
 echo "Starting AI engine..."\n\
 /app/ai/.venv/bin/python -m uvicorn ai.evaluator:app --host 127.0.0.1 --port 8000 --log-level warning &\n\
 echo "Starting frontend..."\n\
