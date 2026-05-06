@@ -2,6 +2,7 @@ package database
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -304,5 +305,72 @@ func TestOpenFromEnvVar(t *testing.T) {
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Error("database file was not created from DATABASE_URL")
+	}
+}
+
+// --- HMAC Token Tests ---
+
+func TestValidateTokenNoSecret(t *testing.T) {
+	// Without SESSION_SECRET, all tokens are valid (dev mode).
+	t.Setenv("SESSION_SECRET", "")
+	sessionSecret = ""
+	if !ValidateToken("anyrandomtoken") {
+		t.Error("expected valid in dev mode")
+	}
+}
+
+func TestValidateTokenWithSecret(t *testing.T) {
+	t.Setenv("SESSION_SECRET", "testsecret123")
+	sessionSecret = "testsecret123"
+	defer func() { sessionSecret = "" }()
+
+	// Generate a signed token.
+	token := generateSessionToken()
+	if !ValidateToken(token) {
+		t.Error("valid signed token rejected")
+	}
+
+	// Tamper with the payload.
+	if ValidateToken("tampered" + token[8:]) {
+		t.Error("tampered token accepted")
+	}
+
+	// Unsigned token should be rejected when secret is set.
+	if ValidateToken("plainunsignedtoken") {
+		t.Error("unsigned token accepted when secret is set")
+	}
+}
+
+func TestSessionWithHMAC(t *testing.T) {
+	t.Setenv("SESSION_SECRET", "hmactest")
+	sessionSecret = "hmactest"
+	defer func() { sessionSecret = "" }()
+
+	db := setupTestDB(t)
+	user, _ := db.CreateUser(1, "hmacuser", "", "")
+
+	token, err := db.CreateSession(user.ID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+
+	// Token should contain a dot (payload.signature).
+	if !strings.Contains(token, ".") {
+		t.Error("signed token should contain a dot separator")
+	}
+
+	// Valid token should return the user.
+	found, err := db.GetSession(token)
+	if err != nil || found == nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	if found.Username != "hmacuser" {
+		t.Errorf("username = %q, want %q", found.Username, "hmacuser")
+	}
+
+	// Tampered token should return nil.
+	found, _ = db.GetSession("tampered." + token[strings.IndexByte(token, '.')+1:])
+	if found != nil {
+		t.Error("tampered token should not return a user")
 	}
 }

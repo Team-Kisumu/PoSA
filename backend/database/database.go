@@ -3,6 +3,7 @@
 package database
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
@@ -10,10 +11,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+// sessionSecret is the HMAC key for signing session tokens.
+// Loaded from SESSION_SECRET env var. If empty, tokens are unsigned (dev mode).
+var sessionSecret string
+
+func init() {
+	sessionSecret = os.Getenv("SESSION_SECRET")
+}
 
 // DB wraps the sql.DB connection and provides repository methods.
 type DB struct {
@@ -243,9 +253,13 @@ func (db *DB) CreateSession(userID int64, duration time.Duration) (string, error
 	return token, nil
 }
 
-// GetSession validates a session token and returns the associated user ID.
-// Returns nil if the token is invalid or expired.
+// GetSession validates a session token's HMAC signature, then looks up the
+// associated user. Returns nil if the token is invalid, tampered, or expired.
 func (db *DB) GetSession(token string) (*User, error) {
+	if !ValidateToken(token) {
+		return nil, nil
+	}
+
 	hash := hashToken(token)
 
 	var userID int64
@@ -364,13 +378,51 @@ func (db *DB) CountSubmissions(userID int64) (int64, error) {
 
 // --- Helpers ---
 
+// generateSessionToken creates a random token and HMAC-signs it.
+// Format: <random_hex>.<hmac_hex>
+// If SESSION_SECRET is not set, returns unsigned token (dev mode).
 func generateSessionToken() string {
 	b := make([]byte, 32)
 	rand.Read(b)
-	return hex.EncodeToString(b)
+	payload := hex.EncodeToString(b)
+	if sessionSecret == "" {
+		return payload
+	}
+	sig := signPayload(payload)
+	return payload + "." + sig
 }
 
+// hashToken produces the SHA-256 hash used for database storage.
+// Only the payload portion is hashed (signature is for tamper detection).
 func hashToken(token string) string {
-	h := sha256.Sum256([]byte(token))
+	payload := tokenPayload(token)
+	h := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(h[:])
+}
+
+// ValidateToken checks the HMAC signature of a session token.
+// Returns false if the token is tampered. Returns true if SESSION_SECRET is unset (dev mode).
+func ValidateToken(token string) bool {
+	if sessionSecret == "" {
+		return true
+	}
+	parts := strings.SplitN(token, ".", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	expected := signPayload(parts[0])
+	return hmac.Equal([]byte(parts[1]), []byte(expected))
+}
+
+func signPayload(payload string) string {
+	mac := hmac.New(sha256.New, []byte(sessionSecret))
+	mac.Write([]byte(payload))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func tokenPayload(token string) string {
+	if idx := strings.IndexByte(token, '.'); idx != -1 {
+		return token[:idx]
+	}
+	return token
 }
