@@ -35,7 +35,9 @@ func main() {
 	chain := middleware.Recovery(
 		middleware.RequestID(
 			middleware.CORS(
-				middleware.SecurityHeaders(mux),
+				middleware.SecurityHeaders(
+					middleware.CSRF(mux),
+				),
 			),
 		),
 	)

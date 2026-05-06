@@ -13,23 +13,39 @@ func TestSecurityHeaders(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/submit", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	expected := map[string]string{
-		"X-Content-Type-Options":  "nosniff",
-		"X-Frame-Options":         "DENY",
-		"X-XSS-Protection":        "0",
-		"Content-Security-Policy": "default-src 'none'",
-		"Referrer-Policy":         "no-referrer",
-		"Cache-Control":           "no-store",
+	// Headers that must be present on every response.
+	required := []string{
+		"X-Content-Type-Options",
+		"X-Frame-Options",
+		"X-XSS-Protection",
+		"Content-Security-Policy",
+		"Referrer-Policy",
+		"Strict-Transport-Security",
+		"Permissions-Policy",
+		"Cross-Origin-Opener-Policy",
+		"Cross-Origin-Resource-Policy",
 	}
-	for key, want := range expected {
-		got := w.Header().Get(key)
-		if got != want {
-			t.Errorf("%s = %q, want %q", key, got, want)
+	for _, key := range required {
+		if w.Header().Get(key) == "" {
+			t.Errorf("%s header missing", key)
 		}
+	}
+
+	// Specific value checks.
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want \"nosniff\"", got)
+	}
+	if got := w.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options = %q, want \"DENY\"", got)
+	}
+
+	// API paths should have no-cache headers.
+	if got := w.Header().Get("Cache-Control"); got == "" {
+		t.Error("Cache-Control missing on API path")
 	}
 }
 

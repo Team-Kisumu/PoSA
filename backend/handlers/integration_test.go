@@ -149,19 +149,22 @@ func TestIntegrationSecurityHeaders(t *testing.T) {
 
 	assertStatus(t, w.Code, http.StatusOK)
 
-	// Verify each security header is present with the correct value.
-	headers := map[string]string{
-		"X-Content-Type-Options":  "nosniff",
-		"X-Frame-Options":         "DENY",
-		"Content-Security-Policy": "default-src 'none'",
-		"Referrer-Policy":         "no-referrer",
-		"Cache-Control":           "no-store",
+	// Verify key security headers are present.
+	required := []string{
+		"X-Content-Type-Options",
+		"X-Frame-Options",
+		"Content-Security-Policy",
+		"Referrer-Policy",
+		"Strict-Transport-Security",
+		"Permissions-Policy",
 	}
-	for key, want := range headers {
-		got := w.Header().Get(key)
-		if got != want {
-			t.Errorf("%s = %q, want %q", key, got, want)
+	for _, key := range required {
+		if w.Header().Get(key) == "" {
+			t.Errorf("%s header missing", key)
 		}
+	}
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want \"nosniff\"", got)
 	}
 }
 

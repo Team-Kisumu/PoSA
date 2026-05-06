@@ -12,6 +12,13 @@ const aiPrefix = AI_URL === "" ? "/ai" : AI_URL;
 
 // --- Types ---
 
+// Read the CSRF token from the cookie for state-changing requests.
+function getCsrfToken(): string {
+  if (typeof document === "undefined") return "";
+  const match = document.cookie.match(/csrf_token=([^;]+)/);
+  return match ? match[1] : "";
+}
+
 export interface APIResponse<T = unknown> {
   success: boolean;
   data?: T;
@@ -64,15 +71,21 @@ export async function checkHealth(): Promise<APIResponse> {
 export async function submitFile(file: File): Promise<APIResponse<SubmitData>> {
   const form = new FormData();
   form.append("file", file);
-  const resp = await fetch(`${API_URL}/api/submit`, { method: "POST", body: form });
+  const resp = await fetch(`${API_URL}/api/submit`, {
+    method: "POST",
+    body: form,
+    headers: { "X-CSRF-Token": getCsrfToken() },
+    credentials: "include",
+  });
   return resp.json();
 }
 
 export async function submitRepo(repoUrl: string): Promise<APIResponse<SubmitData>> {
   const resp = await fetch(`${API_URL}/api/submit`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() },
     body: JSON.stringify({ repo: repoUrl }),
+    credentials: "include",
   });
   return resp.json();
 }
@@ -84,8 +97,9 @@ export async function evaluateFile(
 ): Promise<EvaluationResult> {
   const resp = await fetch(`${aiPrefix}/evaluate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() },
     body: JSON.stringify({ submission_type: "file", name, content, mime }),
+    credentials: "include",
   });
   if (!resp.ok) throw new Error(`Evaluation failed: ${resp.status}`);
   return resp.json();
@@ -94,8 +108,9 @@ export async function evaluateFile(
 export async function evaluateRepo(repoUrl: string): Promise<EvaluationResult> {
   const resp = await fetch(`${aiPrefix}/evaluate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() },
     body: JSON.stringify({ submission_type: "repo", name: repoUrl, content: "", mime: "" }),
+    credentials: "include",
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ detail: `Evaluation failed: ${resp.status}` }));
@@ -113,8 +128,9 @@ export async function mintProof(
   // storage + blockchain. For now, simulate the response structure.
   const resp = await fetch(`${API_URL}/api/mint`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() },
     body: JSON.stringify({ cid, score, submitter }),
+    credentials: "include",
   });
   if (!resp.ok) throw new Error(`Minting failed: ${resp.status}`);
   return resp.json();
