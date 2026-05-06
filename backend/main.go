@@ -1,11 +1,15 @@
 // Package main is the entrypoint for the PoSA backend API server.
-// It registers HTTP routes and applies the middleware chain before
-// starting the server on port 8080.
+// In production (Docker/Render), it serves as the single process on $PORT,
+// proxying /ai/* to the Python AI engine and /* to the Next.js frontend.
+// In development, it runs standalone on :8080.
 package main
 
 import (
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"os"
 
 	"github.com/Murzuqisah/PoSA/handlers"
 	"github.com/Murzuqisah/PoSA/middleware"
@@ -15,16 +19,19 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Register API routes using Go 1.22+ method-pattern syntax.
-	// Each route is restricted to a single HTTP method at the mux level.
 	mux.HandleFunc("GET /health", handlers.Health)
 	mux.HandleFunc("POST /api/submit", handlers.Submit)
 	mux.HandleFunc("GET /api/verify/{cid}", handlers.Verify)
 
-	// Build the middleware chain (outermost runs first):
-	//   Recovery  → catches panics, returns 500 JSON
-	//   RequestID → attaches unique X-Request-ID header
-	//   CORS      → allows cross-origin requests from frontend
-	//   SecurityHeaders → sets defensive HTTP headers
+	// In production, proxy /ai/* to the Python AI engine and /* to Next.js.
+	if os.Getenv("RENDER") == "true" || os.Getenv("DOCKER") == "true" {
+		aiProxy := newProxy("http://127.0.0.1:8000", "/ai")
+		mux.Handle("/ai/", aiProxy)
+
+		frontendProxy := newProxy("http://127.0.0.1:3000", "")
+		mux.Handle("/", frontendProxy)
+	}
+
 	chain := middleware.Recovery(
 		middleware.RequestID(
 			middleware.CORS(
@@ -33,8 +40,31 @@ func main() {
 		),
 	)
 
-	log.Println("PoSA backend listening on :8080")
-	if err := http.ListenAndServe(":8080", chain); err != nil {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("PoSA backend listening on :%s", port)
+	if err := http.ListenAndServe(":"+port, chain); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// newProxy creates a reverse proxy that forwards requests to the target URL.
+// If stripPrefix is non-empty, it strips that prefix from the request path.
+func newProxy(target, stripPrefix string) http.Handler {
+	u, _ := url.Parse(target)
+	proxy := httputil.NewSingleHostReverseProxy(u)
+
+	// Suppress proxy error logs for unavailable backends during startup.
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte(`{"success":false,"error":{"code":"PROXY_ERROR","message":"service unavailable"}}`))
+	}
+
+	if stripPrefix == "" {
+		return proxy
+	}
+	return http.StripPrefix(stripPrefix, proxy)
 }
