@@ -31,9 +31,7 @@ export default function Navbar() {
     <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-black/80 backdrop-blur-sm sticky top-0 z-50">
       <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         <Link href="/" className="group flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-black dark:bg-white flex items-center justify-center">
-            <span className="text-white dark:text-black font-bold text-sm">P</span>
-          </div>
+          <img src="/appicon.png" alt="PoSA" className="w-8 h-8 rounded-lg" />
           <div>
             <span className="text-lg font-bold text-black dark:text-white group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors">
               PoSA

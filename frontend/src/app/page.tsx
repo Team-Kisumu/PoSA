@@ -46,6 +46,9 @@ export default function Home() {
       <main className="flex-1">
         {/* Hero */}
         <section className="max-w-6xl mx-auto px-6 pt-20 pb-16 text-center">
+          <div className="inline-block mb-8">
+            <img src="/logo.png" alt="PoSA" className="h-16 mx-auto" />
+          </div>
           <div className="inline-block px-4 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 mb-8">
             Live on Flow Testnet
           </div>
