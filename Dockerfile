@@ -1,7 +1,8 @@
 # PoSA Dockerfile
 #
 # Multi-stage build for Render deployment.
-# All services run behind nginx on $PORT.
+# Single-process architecture: Go backend serves on $PORT,
+# proxies /ai/* to the Python AI engine internally.
 #
 # Build:  docker build -t posa .
 # Run:    docker run -p 10000:10000 -e PORT=10000 posa
@@ -18,7 +19,7 @@ COPY backend/ ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /posa-backend .
 
 # ============================================================
-# Stage 2: Build Next.js frontend
+# Stage 2: Build Next.js frontend (static export)
 # ============================================================
 FROM node:22-bookworm-slim AS frontend-build
 
@@ -38,11 +39,10 @@ RUN npm run build
 FROM node:22-bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nginx \
     python3 \
     python3-venv \
     curl \
-    procps \
+    nginx \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -65,27 +65,27 @@ COPY --from=frontend-build /build/public /app/frontend/public
 COPY --from=frontend-build /build/package.json /app/frontend/package.json
 COPY --from=frontend-build /build/node_modules /app/frontend/node_modules
 
-# --- nginx config template ---
+# --- nginx config ---
 COPY nginx.conf /app/nginx.conf.template
 
-# --- Start script (created inline to avoid line-ending issues) ---
+# Writable paths for nginx.
+RUN mkdir -p /tmp/nginx \
+    && chmod -R 777 /tmp/nginx /var/log/nginx /var/lib/nginx
+
+# Create start script inline (avoids CRLF/permission issues).
 RUN printf '#!/bin/sh\n\
-set -ex\n\
 export PYTHONPATH=/app\n\
 PORT="${PORT:-10000}"\n\
 mkdir -p /tmp/nginx\n\
 sed "s/PORT_PLACEHOLDER/${PORT}/g" /app/nginx.conf.template > /tmp/nginx/nginx.conf\n\
+echo "Starting services on port ${PORT}..."\n\
 /app/posa-backend &\n\
 /app/ai/.venv/bin/python -m uvicorn ai.evaluator:app --host 127.0.0.1 --port 8000 --log-level warning &\n\
 cd /app/frontend && node node_modules/next/dist/bin/next start -p 3000 &\n\
 cd /app\n\
-sleep 3\n\
-echo "PoSA ready on port ${PORT}"\n\
-exec nginx -c /tmp/nginx/nginx.conf -g "daemon off;"\n' > /app/start.sh && chmod +x /app/start.sh
-
-# Writable paths for non-root nginx.
-RUN mkdir -p /tmp/nginx \
-    && chmod -R 777 /tmp/nginx /var/log/nginx /var/lib/nginx
+sleep 2\n\
+exec nginx -c /tmp/nginx/nginx.conf -g "daemon off;"\n' > /app/start.sh \
+    && chmod +x /app/start.sh
 
 EXPOSE 10000
 

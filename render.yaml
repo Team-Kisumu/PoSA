@@ -1,0 +1,28 @@
+# Render Blueprint
+# https://docs.render.com/blueprint-spec
+
+services:
+  - type: web
+    name: posa
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: AI_API_KEY
+        sync: false
+      - key: LIGHTHOUSE_API_KEY
+        sync: false
+      - key: FLOW_PRIVATE_KEY
+        sync: false
+      - key: FLOW_ACCOUNT_ADDRESS
+        sync: false
+      - key: CONTRACT_ADDRESS
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: INFURA_PROJECT_ID
+        sync: false
+      - key: INFURA_API_SECRET
+        sync: false
