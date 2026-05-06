@@ -42,6 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-venv \
     curl \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -51,6 +52,7 @@ ENV PYTHONPATH=/app
 
 # --- Go backend binary ---
 COPY --from=backend-build /posa-backend /app/posa-backend
+RUN chmod +x /app/posa-backend
 
 # --- Python AI engine ---
 COPY ai/ /app/ai/
@@ -66,22 +68,25 @@ COPY --from=frontend-build /build/node_modules /app/frontend/node_modules
 # --- nginx config template ---
 COPY nginx.conf /app/nginx.conf.template
 
+# --- Start script (created inline to avoid line-ending issues) ---
+RUN printf '#!/bin/sh\n\
+set -e\n\
+export PYTHONPATH=/app\n\
+PORT="${PORT:-10000}"\n\
+mkdir -p /tmp/nginx\n\
+sed "s/PORT_PLACEHOLDER/${PORT}/g" /app/nginx.conf.template > /tmp/nginx/nginx.conf\n\
+/app/posa-backend &\n\
+/app/ai/.venv/bin/python -m uvicorn ai.evaluator:app --host 127.0.0.1 --port 8000 --log-level warning &\n\
+cd /app/frontend && node node_modules/next/dist/bin/next start -p 3000 &\n\
+cd /app\n\
+sleep 3\n\
+echo "PoSA ready on port ${PORT}"\n\
+exec nginx -c /tmp/nginx/nginx.conf -g "daemon off;"\n' > /app/start.sh && chmod +x /app/start.sh
+
 # Writable paths for non-root nginx.
 RUN mkdir -p /tmp/nginx \
     && chmod -R 777 /tmp/nginx /var/log/nginx /var/lib/nginx
 
 EXPOSE 10000
 
-# Inline startup: no external script, no shebang issues.
-# Shell form CMD ensures /bin/sh -c wraps everything.
-CMD set -e; \
-    PORT="${PORT:-10000}"; \
-    mkdir -p /tmp/nginx; \
-    sed "s/PORT_PLACEHOLDER/${PORT}/g" /app/nginx.conf.template > /tmp/nginx/nginx.conf; \
-    /app/posa-backend & \
-    /app/ai/.venv/bin/python -m uvicorn ai.evaluator:app --host 127.0.0.1 --port 8000 --log-level warning & \
-    cd /app/frontend && npx next start -p 3000 & \
-    cd /app; \
-    sleep 3; \
-    echo "PoSA ready on port ${PORT}"; \
-    exec nginx -c /tmp/nginx/nginx.conf -g "daemon off;"
+CMD ["/app/start.sh"]
