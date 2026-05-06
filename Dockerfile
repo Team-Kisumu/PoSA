@@ -1,13 +1,10 @@
 # PoSA Dockerfile
 #
-# Multi-stage build producing a single container with:
-#   - Go backend on :8080
-#   - Python AI engine on :8000
-#   - Next.js frontend on :3000
-#   - nginx reverse proxy on $PORT (default :10000)
+# Multi-stage build for Render deployment.
+# All services run behind nginx on $PORT.
 #
 # Build:  docker build -t posa .
-# Run:    docker run -p 8080:10000 --env-file .env posa
+# Run:    docker run -p 10000:10000 -e PORT=10000 posa
 
 # ============================================================
 # Stage 1: Build Go backend
@@ -21,7 +18,7 @@ COPY backend/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o /posa-backend .
 
 # ============================================================
-# Stage 2: Build Next.js frontend
+# Stage 2: Build Next.js frontend (standalone mode)
 # ============================================================
 FROM node:22-bookworm-slim AS frontend-build
 
@@ -45,14 +42,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-venv \
     curl \
-    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # --- Go backend binary ---
-COPY --from=backend-build /posa-backend /app/backend/posa-backend
+COPY --from=backend-build /posa-backend /app/posa-backend
 
 # --- Python AI engine ---
 COPY ai/ /app/ai/
@@ -65,19 +62,15 @@ COPY --from=frontend-build /build/public /app/frontend/public
 COPY --from=frontend-build /build/package.json /app/frontend/package.json
 COPY --from=frontend-build /build/node_modules /app/frontend/node_modules
 
-# --- Config and entrypoint ---
+# --- Config ---
 COPY nginx.conf /app/nginx.conf.template
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-# Make runtime write paths available for arbitrary non-root execution.
-RUN mkdir -p /tmp/nginx /app/logs \
-    && chmod -R 777 /tmp/nginx /app/logs /var/log/nginx /var/lib/nginx \
-    && chmod 755 /app/backend/posa-backend /app/entrypoint.sh
+# Writable paths for non-root nginx.
+RUN mkdir -p /tmp/nginx \
+    && chmod -R 777 /tmp/nginx /var/log/nginx /var/lib/nginx
 
 EXPOSE 10000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-10000}/health || exit 1
-
-CMD ["sh", "/app/entrypoint.sh"]
+CMD ["/app/entrypoint.sh"]
