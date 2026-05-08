@@ -39,10 +39,13 @@ export default function Navbar() {
             <span className="hidden sm:inline text-xs text-zinc-400 ml-2">Proof-of-Skill AI</span>
           </div>
         </Link>
-        <nav className="flex items-center gap-6">
+        <nav className="flex items-center gap-4 sm:gap-6">
           <Link href="/analyze" className={linkClass("/analyze")}>Analyze</Link>
           <Link href="/proofs" className={linkClass("/proofs")}>Proofs</Link>
           <Link href="/verify" className={linkClass("/verify")}>Verify</Link>
+          {user?.role === "admin" && (
+            <Link href="/admin" className={linkClass("/admin")}>Admin</Link>
+          )}
           <a
             href="https://github.com/Team-Kisumu/PoSA"
             target="_blank"

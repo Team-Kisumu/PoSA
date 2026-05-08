@@ -98,8 +98,12 @@ func (h *Handler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(sessionDuration.Seconds()),
 	})
 
-	// Redirect to analyze page after successful login.
-	http.Redirect(w, r, "/analyze", http.StatusTemporaryRedirect)
+	// Redirect based on role: admins go to /admin, users go to /analyze.
+	redirectPath := "/analyze"
+	if user.Role == "admin" {
+		redirectPath = "/admin"
+	}
+	http.Redirect(w, r, redirectPath, http.StatusTemporaryRedirect)
 }
 
 // Me returns the current authenticated user's profile.

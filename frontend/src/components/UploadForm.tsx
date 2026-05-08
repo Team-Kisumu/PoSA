@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { submitFile, submitRepo, evaluateFile, evaluateRepo } from "@/lib/api";
+import { submitFile, submitRepo, evaluateFile, evaluateRepo, saveSubmission } from "@/lib/api";
 import type { EvaluationResult } from "@/lib/api";
 
 type Tab = "upload" | "paste" | "repo";
@@ -89,6 +89,7 @@ export default function UploadForm({ onResult }: Props) {
         }
         try {
           const evaluation = await evaluateRepo(repoUrl);
+          saveSubmission({ type: "repo", name: repoUrl, score: evaluation.score });
           onResult(evaluation, repoUrl);
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Repository analysis failed";
@@ -110,6 +111,7 @@ export default function UploadForm({ onResult }: Props) {
       // Evaluate via AI engine.
       try {
         const evaluation = await evaluateFile(filename, content, "text/plain");
+        saveSubmission({ type: "file", name: filename, score: evaluation.score });
         onResult(evaluation, filename);
       } catch {
         // AI engine unavailable — use a placeholder result.

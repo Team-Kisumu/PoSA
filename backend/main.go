@@ -40,6 +40,10 @@ func main() {
 	mux.HandleFunc("GET /api/proofs", proofsHandler.List)
 	mux.HandleFunc("GET /api/proofs/{id}", proofsHandler.Get)
 
+	// Submissions route (save evaluation results).
+	submissionsHandler := &handlers.SubmissionsHandler{DB: db}
+	mux.HandleFunc("POST /api/submissions", submissionsHandler.Create)
+
 	// Admin routes (protected by RequireAdmin).
 	adminHandler := &handlers.AdminHandler{DB: db}
 	mux.Handle("GET /api/admin/users", auth.RequireAuth(auth.RequireAdmin(http.HandlerFunc(adminHandler.ListUsers))))
