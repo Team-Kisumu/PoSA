@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import UploadForm from "@/components/UploadForm";
 import ResultsView from "@/components/ResultsView";
-import type { EvaluationResult } from "@/lib/api";
+import { getMe, getLoginUrl } from "@/lib/api";
+import type { EvaluationResult, UserProfile } from "@/lib/api";
 
 interface SubmissionResult {
   evaluation: EvaluationResult;
@@ -14,12 +15,37 @@ interface SubmissionResult {
 
 export default function AnalyzePage() {
   const [submission, setSubmission] = useState<SubmissionResult | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    getMe().then((u) => { setUser(u); setAuthChecked(true); });
+  }, []);
 
   const handleResult = (evaluation: EvaluationResult, filename: string) => {
     setSubmission({ evaluation, filename });
   };
 
   const handleReset = () => setSubmission(null);
+
+  // Show sign-in prompt if not authenticated
+  if (authChecked && !user) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-black flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center px-6">
+          <div className="text-center max-w-md">
+            <h2 className="text-2xl font-bold text-black dark:text-white mb-3">Sign in to Analyze</h2>
+            <p className="text-zinc-500 mb-6">You need to sign in with GitHub to submit code for AI evaluation.</p>
+            <a href={getLoginUrl()} className="inline-block px-6 py-3 bg-black dark:bg-white text-white dark:text-black rounded-lg font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors">
+              Sign in with GitHub
+            </a>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black flex flex-col">
