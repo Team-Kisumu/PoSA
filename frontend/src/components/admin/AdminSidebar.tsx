@@ -9,13 +9,22 @@ interface Props {
   view: View;
   setView: (v: View) => void;
   user: UserProfile;
+  open: boolean;
+  onClose: () => void;
 }
 
-export default function AdminSidebar({ view, setView, user }: Props) {
+export default function AdminSidebar({ view, setView, user, open, onClose }: Props) {
   const handleLogout = async () => { await logout(); window.location.href = "/"; };
+  const handleNav = (v: View) => { setView(v); onClose(); };
 
   return (
-    <aside className="w-[260px] bg-[#0c1222] border-r border-white/[0.06] flex flex-col h-screen sticky top-0">
+    <>
+      {/* Mobile overlay */}
+      {open && <div className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={onClose} />}
+
+      <aside className={`fixed lg:sticky top-0 left-0 z-50 w-[260px] bg-[#0c1222] border-r border-white/[0.06] flex flex-col h-screen transition-transform duration-300 lg:translate-x-0 ${
+        open ? "translate-x-0" : "-translate-x-full"
+      }`}>
       {/* Brand */}
       <div className="px-6 py-5 border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
@@ -31,14 +40,14 @@ export default function AdminSidebar({ view, setView, user }: Props) {
       <nav className="flex-1 px-3 py-5 overflow-y-auto">
         {/* Main Section */}
         <p className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Main</p>
-        <NavItem active={view === "overview"} onClick={() => setView("overview")} icon={<IconGrid />} label="Dashboard" />
-        <NavItem active={view === "users"} onClick={() => setView("users")} icon={<IconUsers />} label="Users" />
-        <NavItem active={view === "credentials"} onClick={() => setView("credentials")} icon={<IconShield />} label="Credentials" />
-        <NavItem active={view === "proofs"} onClick={() => setView("proofs")} icon={<IconCube />} label="Proofs" />
+        <NavItem active={view === "overview"} onClick={() => handleNav("overview")} icon={<IconGrid />} label="Dashboard" />
+        <NavItem active={view === "users"} onClick={() => handleNav("users")} icon={<IconUsers />} label="Users" />
+        <NavItem active={view === "credentials"} onClick={() => handleNav("credentials")} icon={<IconShield />} label="Credentials" />
+        <NavItem active={view === "proofs"} onClick={() => handleNav("proofs")} icon={<IconCube />} label="Proofs" />
 
         {/* System Section */}
         <p className="px-3 mt-6 mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">System</p>
-        <NavItem active={view === "settings"} onClick={() => setView("settings")} icon={<IconGear />} label="Settings" />
+        <NavItem active={view === "settings"} onClick={() => handleNav("settings")} icon={<IconGear />} label="Settings" />
         <NavLink href="/" icon={<IconGlobe />} label="View Site" />
         <NavLink href="https://github.com/Team-Kisumu/PoSA" icon={<IconCode />} label="GitHub" external />
       </nav>
@@ -60,7 +69,8 @@ export default function AdminSidebar({ view, setView, user }: Props) {
           Sign Out
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 

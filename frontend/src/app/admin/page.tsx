@@ -18,6 +18,7 @@ export default function AdminPage() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<View>("overview");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [credentials, setCredentials] = useState<Credential[]>([]);
@@ -70,10 +71,10 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-[#080d19] flex">
-      <AdminSidebar view={view} setView={setView} user={user} />
-      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        <AdminHeader view={view} />
-        <main className="flex-1 overflow-y-auto p-8">
+      <AdminSidebar view={view} setView={setView} user={user} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="flex-1 flex flex-col min-h-screen overflow-hidden lg:ml-0">
+        <AdminHeader view={view} onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           {error && <ErrorBanner message={error} onRetry={fetchData} />}
           {view === "overview" && <OverviewView stats={stats} users={users} credentials={credentials} loading={dataLoading} setView={setView} />}
           {view === "users" && <UsersView users={users} total={userTotal} loading={dataLoading} onRoleChange={updateRole} />}
