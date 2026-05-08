@@ -40,6 +40,14 @@ func main() {
 	mux.HandleFunc("GET /api/proofs", proofsHandler.List)
 	mux.HandleFunc("GET /api/proofs/{id}", proofsHandler.Get)
 
+	// Admin routes (protected by RequireAdmin).
+	adminHandler := &handlers.AdminHandler{DB: db}
+	mux.Handle("GET /api/admin/users", auth.RequireAuth(auth.RequireAdmin(http.HandlerFunc(adminHandler.ListUsers))))
+	mux.Handle("GET /api/admin/users/{id}", auth.RequireAuth(auth.RequireAdmin(http.HandlerFunc(adminHandler.GetUser))))
+	mux.Handle("PATCH /api/admin/users/{id}", auth.RequireAuth(auth.RequireAdmin(http.HandlerFunc(adminHandler.UpdateUser))))
+	mux.Handle("GET /api/admin/credentials", auth.RequireAuth(auth.RequireAdmin(http.HandlerFunc(adminHandler.ListCredentials))))
+	mux.Handle("GET /api/admin/stats", auth.RequireAuth(auth.RequireAdmin(http.HandlerFunc(adminHandler.Stats))))
+
 	// Auth routes.
 	mux.HandleFunc("GET /auth/github", authHandler.GitHubLogin)
 	mux.HandleFunc("GET /auth/github/callback", authHandler.GitHubCallback)
