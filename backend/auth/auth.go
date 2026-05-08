@@ -98,8 +98,8 @@ func (h *Handler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(sessionDuration.Seconds()),
 	})
 
-	// Redirect to frontend.
-	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+	// Redirect to analyze page after successful login.
+	http.Redirect(w, r, "/analyze", http.StatusTemporaryRedirect)
 }
 
 // Me returns the current authenticated user's profile.
