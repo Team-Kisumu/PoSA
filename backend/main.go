@@ -35,6 +35,11 @@ func main() {
 	mux.HandleFunc("POST /api/submit", handlers.Submit)
 	mux.HandleFunc("GET /api/verify/{cid}", handlers.Verify)
 
+	// Proofs routes.
+	proofsHandler := &handlers.ProofsHandler{DB: db}
+	mux.HandleFunc("GET /api/proofs", proofsHandler.List)
+	mux.HandleFunc("GET /api/proofs/{id}", proofsHandler.Get)
+
 	// Auth routes.
 	mux.HandleFunc("GET /auth/github", authHandler.GitHubLogin)
 	mux.HandleFunc("GET /auth/github/callback", authHandler.GitHubCallback)

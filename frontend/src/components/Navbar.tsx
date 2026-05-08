@@ -41,6 +41,7 @@ export default function Navbar() {
         </Link>
         <nav className="flex items-center gap-6">
           <Link href="/analyze" className={linkClass("/analyze")}>Analyze</Link>
+          <Link href="/proofs" className={linkClass("/proofs")}>Proofs</Link>
           <Link href="/verify" className={linkClass("/verify")}>Verify</Link>
           <a
             href="https://github.com/Team-Kisumu/PoSA"
