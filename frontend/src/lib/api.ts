@@ -136,6 +136,21 @@ export async function mintProof(
   return resp.json();
 }
 
+export async function saveSubmission(data: {
+  type: string;
+  name: string;
+  score: number;
+  cid?: string;
+  tx_hash?: string;
+}): Promise<void> {
+  await fetch(`${API_URL}/api/submissions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+}
+
 // --- Verification ---
 
 export interface UserProfile {
