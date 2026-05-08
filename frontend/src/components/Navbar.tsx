@@ -12,7 +12,7 @@ export default function Navbar() {
 
   useEffect(() => {
     getMe().then(setUser);
-  }, []);
+  }, [pathname]);
 
   const handleLogout = async () => {
     await logout();
