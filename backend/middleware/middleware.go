@@ -37,9 +37,9 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Content-Security-Policy", strings.Join([]string{
 			"default-src 'self'",
 			"script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-			"style-src 'self' 'unsafe-inline'",
-			"font-src 'self' data:",
-			"img-src 'self' data: https:",
+			"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+			"font-src 'self' data: https://fonts.gstatic.com",
+			"img-src 'self' data: https: blob:",
 			"connect-src 'self' https://gateway.lighthouse.storage https://api.impulselabs.ai https://rest-mainnet.onflow.org https://rest-testnet.onflow.org",
 			"frame-ancestors 'none'",
 			"base-uri 'self'",
