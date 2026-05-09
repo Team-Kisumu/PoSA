@@ -23,3 +23,8 @@ func GetUser(r *http.Request) *database.User {
 	user, _ := r.Context().Value(userContextKey).(*database.User)
 	return user
 }
+
+// SetUserForTest attaches a user to the request context (exported for testing).
+func SetUserForTest(r *http.Request, user *database.User) *http.Request {
+	return setUser(r, user)
+}

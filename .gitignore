@@ -50,3 +50,4 @@ PR.txt
 frontend/node_modules/
 data/
 .env.production
+supabase/

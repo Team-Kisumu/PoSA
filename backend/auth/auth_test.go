@@ -3,6 +3,7 @@ package auth
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/Murzuqisah/PoSA/database"
@@ -113,8 +114,14 @@ func TestLogout(t *testing.T) {
 
 func setupTestDB(t *testing.T) *database.DB {
 	t.Helper()
-	path := t.TempDir() + "/test.db"
-	db, err := database.Open(path)
+	dsn := os.Getenv("SUPABASE_DB_URL")
+	if dsn == "" {
+		dsn = os.Getenv("DATABASE_URL")
+	}
+	if dsn == "" {
+		t.Skip("SUPABASE_DB_URL not set — skipping DB-dependent auth test")
+	}
+	db, err := database.Open(dsn)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
